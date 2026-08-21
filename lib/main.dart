@@ -31,24 +31,32 @@ class _RaoHomeState extends State<RaoHome> {
   final stt.SpeechToText speech = stt.SpeechToText();
   final FlutterTts tts = FlutterTts();
 
-  String text = 'नमस्ते! मैं RAO AI हूँ।';
+  String text = 'नमस्ते! मैं RAO AI हूँ 🤖';
   bool listening = false;
+
+  Future<void> speak(String message) async {
+    await tts.setLanguage('hi-IN');
+    await tts.setSpeechRate(0.48);
+    await tts.speak(message);
+  }
 
   Future<void> startListening() async {
     final available = await speech.initialize();
 
     if (!available) {
       setState(() {
-        text = 'Voice input उपलब्ध नहीं है।';
+        text = 'Voice input उपलब्ध नहीं है 🎤';
       });
       return;
     }
 
     setState(() {
       listening = true;
+      text = 'सुन रहा हूँ... 🎤';
     });
 
     await speech.listen(
+      localeId: 'hi_IN',
       onResult: (result) {
         if (result.finalResult) {
           handleCommand(result.recognizedWords);
@@ -64,16 +72,20 @@ class _RaoHomeState extends State<RaoHome> {
 
     if (lower.contains('creator') ||
         lower.contains('क्रिएटर') ||
-        lower.contains('बनाने वाला')) {
-      reply = 'मेरे क्रिएटर का नाम Suraj Kumar है।';
+        lower.contains('निर्माता') ||
+        lower.contains('नाम किसने')) {
+      reply = 'RAO AI के Creator का नाम Suraj Kumar है।';
     } else if (lower.contains('good morning')) {
       reply = 'Good Morning! ☀️';
     } else if (lower.contains('नमस्ते') ||
         lower.contains('namaste')) {
-      reply = 'नमस्ते! 🙏';
-    } else if (lower.contains('salaam') ||
-        lower.contains('सलाम')) {
-      reply = 'वालेकुम सलाम! 🤝';
+      reply = 'नमस्ते! 👋 मैं RAO AI हूँ।';
+    } else if (lower.contains('hello') ||
+        lower.contains('हेलो')) {
+      reply = 'Hello! 👋 मैं RAO AI हूँ।';
+    } else if (lower.contains('तुम कौन') ||
+        lower.contains('who are you')) {
+      reply = 'मैं RAO AI हूँ, आपका AI assistant।';
     } else {
       reply = 'आपने कहा: $command';
     }
@@ -83,22 +95,18 @@ class _RaoHomeState extends State<RaoHome> {
       listening = false;
     });
 
-    await tts.speak(reply);
-  }
-
-  Future<void> stopListening() async {
     await speech.stop();
-
-    setState(() {
-      listening = false;
-    });
+    await speak(reply);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RAO AI'),
+        title: const Text(
+          'RAO AI',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
       ),
       body: Center(
@@ -111,30 +119,32 @@ class _RaoHomeState extends State<RaoHome> {
                 Icons.smart_toy,
                 size: 90,
               ),
-              const SizedBox(height: 25),
-              const Text(
-                'RAO AI',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 25),
+              const SizedBox(height: 30),
               Text(
                 text,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 20),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              const SizedBox(height: 40),
-              ElevatedButton.icon(
-                onPressed:
-                    listening ? stopListening : startListening,
-                icon: Icon(
-                  listening ? Icons.stop : Icons.mic,
+              const SizedBox(height: 45),
+              GestureDetector(
+                onTap: startListening,
+                child: CircleAvatar(
+                  radius: 42,
+                  child: Icon(
+                    listening ? Icons.mic : Icons.mic_none,
+                    size: 40,
+                  ),
                 ),
-                label: Text(
-                  listening ? 'STOP' : 'VOICE INPUT',
-                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                listening
+                    ? 'बोलिए...'
+                    : 'माइक दबाकर बोलिए',
+                style: const TextStyle(fontSize: 16),
               ),
             ],
           ),
