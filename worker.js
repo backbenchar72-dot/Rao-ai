@@ -1,11 +1,11 @@
 const OPENAI_URL = "https://api.openai.com/v1/responses";
-const MODEL = "gpt-5.4-mini";
+const MODEL = "gpt-4o-mini";
 
-function jsonResponse(status, data) {
+function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      "Content-Type": "application/json; charset=utf-8",
+      "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
@@ -15,40 +15,16 @@ function jsonResponse(status, data) {
 
 function makeInput(messages) {
   return messages.map((message) => {
-    const content = [];
+    const role = message.role === "assistant" ? "assistant" : "user";
 
-    if (message?.image) {
-      content.push({
-        type: "input_image",
-        image_url: message.image
-      });
-    }
+    let content = message.content;
 
-    if (message?.file?.text) {
-      content.push({
-        type: "input_text",
-        text:
-          `FILE CONTENT (${message.file.name || "uploaded file"}):\n\n` +
-          String(message.file.text)
-      });
-    }
-
-    if (message?.content) {
-      content.push({
-        type: "input_text",
-        text: String(message.content)
-      });
-    }
-
-    if (!content.length) {
-      content.push({
-        type: "input_text",
-        text: "Please respond to the user."
-      });
+    if (typeof content !== "string") {
+      content = JSON.stringify(content);
     }
 
     return {
-      role: message?.role === "assistant" ? "assistant" : "user",
+      role,
       content
     };
   });
@@ -66,11 +42,8 @@ function extractReply(data) {
       if (!Array.isArray(item?.content)) continue;
 
       for (const part of item.content) {
-        if (
-          typeof part?.text === "string" &&
-          part.text.trim()
-        ) {
-          parts.push(part.text);
+        if (typeof part?.text === "string" && part.text.trim()) {
+          parts.push(part.text.trim());
         }
       }
     }
@@ -83,48 +56,39 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // CORS preflight
+    // CORS
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
-        }
-      });
+      return jsonResponse(null, 204);
     }
 
-    // Cloudflare health check
+    // Health check
     if (
       request.method === "GET" &&
-      (
-        url.pathname === "/api/chat" ||
-        url.pathname === "/.netlify/functions/chat"
-      )
+      (url.pathname === "/api/chat" ||
+       url.pathname === "/.netlify/functions/chat")
     ) {
-      return jsonResponse(200, {
+      return jsonResponse({
         ok: true,
         service: "RAO AI",
         message: "RAO AI Worker is running."
       });
     }
 
-    // Chat endpoint
+    // CHAT API
     if (
       url.pathname === "/api/chat" ||
       url.pathname === "/.netlify/functions/chat"
     ) {
       if (request.method !== "POST") {
-        return jsonResponse(405, {
+        return jsonResponse({
           error: "Method not allowed"
-        });
+        }, 405);
       }
 
       if (!env.OPENAI_API_KEY) {
-        return jsonResponse(500, {
+        return jsonResponse({
           error: "OPENAI_API_KEY is not configured."
-        });
+        }, 500);
       }
 
       let body;
@@ -132,9 +96,9 @@ export default {
       try {
         body = await request.json();
       } catch {
-        return jsonResponse(400, {
+        return jsonResponse({
           error: "Invalid JSON request."
-        });
+        }, 400);
       }
 
       const messages = Array.isArray(body?.messages)
@@ -142,9 +106,9 @@ export default {
         : [];
 
       if (!messages.length) {
-        return jsonResponse(400, {
+        return jsonResponse({
           error: "No messages were provided."
-        });
+        }, 400);
       }
 
       try {
@@ -162,46 +126,43 @@ export default {
 
         const rawText = await response.text();
 
-        let data;
+        let data = null;
 
         try {
-          data = rawText ? JSON.parse(rawText) : {};
+          data = rawText ? JSON.parse(rawText) : null;
         } catch {
-          return jsonResponse(502, {
+          return jsonResponse({
             error: "OpenAI returned an invalid response.",
             details: rawText.slice(0, 500)
-          });
+          }, 502);
         }
 
         if (!response.ok) {
-          return jsonResponse(response.status, {
-            error:
-              data?.error?.message ||
-              "OpenAI API request failed."
-          });
+          return jsonResponse({
+            error: data?.error?.message || "OpenAI API request failed."
+          }, response.status);
         }
 
         const reply = extractReply(data);
 
         if (!reply) {
-          return jsonResponse(502, {
+          return jsonResponse({
             error: "OpenAI returned no text response."
-          });
+          }, 502);
         }
 
-        return jsonResponse(200, {
+        return jsonResponse({
           reply,
           output_text: reply
         });
-
       } catch (error) {
-        return jsonResponse(500, {
+        return jsonResponse({
           error: error?.message || "Internal server error."
-        });
+        }, 500);
       }
     }
 
-    // Serve your existing HTML/CSS/JS files
+    // Serve website files
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
