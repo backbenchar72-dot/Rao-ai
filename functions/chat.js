@@ -86,10 +86,29 @@ function extractReply(data) {
 
 export default {
   async fetch(request, env) {
+
+    // CORS
     if (request.method === "OPTIONS") {
-      return jsonResponse(204, {});
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Allow-Methods": "POST, OPTIONS"
+        }
+      });
     }
 
+    // Health check
+    if (request.method === "GET") {
+      return jsonResponse(200, {
+        ok: true,
+        service: "RAO AI",
+        message: "RAO AI Worker is running."
+      });
+    }
+
+    // Only POST for chat
     if (request.method !== "POST") {
       return jsonResponse(405, {
         error: "Method not allowed"
@@ -97,12 +116,15 @@ export default {
     }
 
     try {
+
+      // API KEY CHECK
       if (!env.OPENAI_API_KEY) {
         return jsonResponse(500, {
           error: "OPENAI_API_KEY is not configured."
         });
       }
 
+      // READ REQUEST
       let body;
 
       try {
@@ -123,6 +145,7 @@ export default {
         });
       }
 
+      // CALL OPENAI
       const response = await fetch(OPENAI_URL, {
         method: "POST",
         headers: {
@@ -148,6 +171,7 @@ export default {
         });
       }
 
+      // OPENAI ERROR
       if (!response.ok) {
         return jsonResponse(response.status, {
           error:
@@ -156,6 +180,7 @@ export default {
         });
       }
 
+      // EXTRACT ANSWER
       const reply = extractReply(data);
 
       if (!reply) {
@@ -164,8 +189,9 @@ export default {
         });
       }
 
+      // SUCCESS
       return jsonResponse(200, {
-        reply,
+        reply: reply,
         output_text: reply
       });
 
