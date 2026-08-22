@@ -6,7 +6,8 @@
     "directory": ".",
     "binding": "ASSETS",
     "run_worker_first": [
-      "/api/*"
+      "/api/*",
+      "/.netlify/functions/*"
     ]
   }
 }
