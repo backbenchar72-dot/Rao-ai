@@ -1,4 +1,5 @@
 const GEMINI_MODEL = "gemini-3.6-flash";
+
 const GEMINI_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
@@ -16,6 +17,58 @@ function json(data, status = 200) {
   });
 }
 
+/*
+  RAO AI IDENTITY
+*/
+const DEFAULT_SYSTEM_INSTRUCTION = `
+You are RAO AI, a personal AI assistant.
+
+IMPORTANT IDENTITY RULES:
+
+1. Your name is RAO AI.
+
+2. Your creator/developer is Suraj Kumar.
+
+3. If the user asks:
+   - "Rao AI ko kisne create kiya?"
+   - "Rao AI ka creator kaun hai?"
+   - "Tumhe kisne banaya?"
+   - "Who created Rao AI?"
+   - "Who is your creator?"
+   - or any similar question,
+
+   ALWAYS answer:
+   "RAO AI ko Suraj Kumar ne create kiya hai."
+
+4. NEVER say that Google created RAO AI.
+
+5. NEVER say that OpenAI created RAO AI.
+
+6. NEVER say that Gemini created RAO AI.
+
+7. Gemini is only the AI model/API powering RAO AI.
+   It is NOT the creator of RAO AI.
+
+8. If asked about the underlying AI model, you can say:
+   "RAO AI Gemini model/API ka use karta hai."
+
+9. Keep the distinction clear:
+   Creator/Developer = Suraj Kumar
+   AI Model/API = Google Gemini
+
+10. Reply in the same language as the user whenever practical.
+   If the user speaks Hindi, reply in Hindi.
+   If the user speaks English, reply in English.
+   If the user speaks Hinglish, reply naturally in Hinglish.
+
+11. Be helpful, friendly and concise.
+
+12. Do not invent a different creator name.
+`;
+
+/*
+  Convert frontend messages to Gemini format
+*/
 function normalizeMessages(messages) {
   if (!Array.isArray(messages)) return [];
 
@@ -51,6 +104,9 @@ function normalizeMessages(messages) {
     .filter((message) => message.parts[0].text.trim());
 }
 
+/*
+  Extract Gemini text
+*/
 function extractGeminiText(data) {
   if (!data?.candidates) return "";
 
@@ -61,12 +117,17 @@ function extractGeminiText(data) {
     .join("");
 }
 
+/*
+  Worker
+*/
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // CORS
+    /*
+      CORS preflight
+    */
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -74,7 +135,9 @@ export default {
       });
     }
 
-    // Health check
+    /*
+      Health check
+    */
     if (
       request.method === "GET" &&
       (
@@ -87,12 +150,15 @@ export default {
       return json({
         ok: true,
         service: "RAO AI",
+        creator: "Suraj Kumar",
         model: GEMINI_MODEL,
         message: "RAO AI Worker is running."
       });
     }
 
-    // Supported chat routes
+    /*
+      Supported chat routes
+    */
     const isChatRoute =
       path === "/api/chat" ||
       path === "/chat" ||
@@ -106,6 +172,9 @@ export default {
       }, 404);
     }
 
+    /*
+      Only POST allowed for chat
+    */
     if (request.method !== "POST") {
       return json({
         ok: false,
@@ -113,7 +182,9 @@ export default {
       }, 405);
     }
 
-    // Gemini API secret
+    /*
+      Gemini API key
+    */
     if (!env.GEMINI_API_KEY) {
       return json({
         ok: false,
@@ -121,6 +192,9 @@ export default {
       }, 500);
     }
 
+    /*
+      Read request body
+    */
     let body;
 
     try {
@@ -132,7 +206,9 @@ export default {
       }, 400);
     }
 
-    // Accept existing frontend formats
+    /*
+      Accept different frontend formats
+    */
     let messages = [];
 
     if (Array.isArray(body?.messages)) {
@@ -162,27 +238,40 @@ export default {
       }, 400);
     }
 
-    // Gemini request
+    /*
+      Gemini request
+    */
     const geminiRequest = {
       contents,
+
+      systemInstruction: {
+        parts: [
+          {
+            text: DEFAULT_SYSTEM_INSTRUCTION
+          }
+        ]
+      },
+
       generationConfig: {
         temperature: 0.7,
         maxOutputTokens: 4096
       }
     };
 
-    // Optional system instruction from frontend
+    /*
+      Optional additional system instruction
+    */
     if (typeof body?.system === "string" && body.system.trim()) {
-      geminiRequest.systemInstruction = {
-        parts: [
-          {
-            text: body.system.trim()
-          }
-        ]
-      };
+      geminiRequest.systemInstruction.parts.push({
+        text:
+          "\nAdditional application instructions:\n" +
+          body.system.trim()
+      });
     }
 
-    // Optional Google Search
+    /*
+      Optional Google Search
+    */
     if (body?.webSearch === true) {
       geminiRequest.tools = [
         {
@@ -191,6 +280,9 @@ export default {
       ];
     }
 
+    /*
+      Call Gemini
+    */
     let response;
 
     try {
@@ -212,45 +304,7 @@ export default {
       }, 502);
     }
 
-    let data;
-
-    try {
-      data = await response.json();
-    } catch {
-      return json({
-        ok: false,
-        error: "Gemini returned an invalid response."
-      }, 502);
-    }
-
-    // Gemini API error
-    if (!response.ok) {
-      return json({
-        ok: false,
-        error:
-          data?.error?.message ||
-          `Gemini API request failed (${response.status}).`,
-        status: response.status,
-        details: data?.error || null
-      }, response.status);
-    }
-
-    const reply = extractGeminiText(data);
-
-    if (!reply) {
-      return json({
-        ok: false,
-        error: "Gemini returned no text response.",
-        details: data
-      }, 502);
-    }
-
-    // Compatible with existing RAO AI frontend
-    return json({
-      ok: true,
-      reply,
-      output_text: reply,
-      response: data
-    });
-  }
-};
+    /*
+      Read Gemini response
+    */
+   
