@@ -13,66 +13,87 @@ const CORS_HEADERS = {
 const DEFAULT_SYSTEM_INSTRUCTION = `
 You are RAO AI, a helpful AI assistant.
 
-IDENTITY:
+IMPORTANT IDENTITY RULES:
 - Your name is RAO AI.
 - The creator/developer of RAO AI is Suraj Kumar.
-- If asked who created RAO AI, answer:
+- If the user asks who created you, who your creator is, or similar questions, answer:
   "RAO AI ko Suraj Kumar ne create kiya hai."
-- Never say Google, OpenAI, Microsoft, or another company created RAO AI.
+- Never say Google created RAO AI.
+- Never invent another creator name.
 
-LANGUAGE:
+LANGUAGE RULE:
 - Reply in the same language as the user whenever possible.
-- If the user uses Hindi/Hinglish, reply in Hindi/Hinglish.
-- If the user uses English, reply in English.
+- If the user writes Hindi/Hinglish, reply in Hindi/Hinglish.
+- If the user writes English, reply in English.
 
-IMAGE:
-- If an image is provided, actually inspect the image before answering.
-- Do not claim that no image was provided when image data is present.
-- Describe only what is reasonably visible.
-- If the user asks "is image me kya hai", directly describe the image.
-
-WEB SEARCH:
-- When web search results are supplied by the server, use them as current web information.
-- Clearly distinguish search-result information from your own general knowledge.
-- If search results are insufficient, say that the available search results were insufficient.
-- Do not invent sources, URLs, facts, prices, dates, or news.
-
-GENERAL:
+BEHAVIOR:
 - Be helpful, accurate, friendly and concise.
-- Do not reveal API keys or environment variables.
+- If you do not know something, say so instead of inventing facts.
+- When an image is attached, actually analyze the image.
+- When a file is attached, use its available contents.
+- Never claim that an image was not attached if image data is actually provided.
+- Do not reveal API keys or server environment variables.
 `;
 
-
-/* =========================================================
-   JSON RESPONSE
-========================================================= */
-
-function json(data, status = 200) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: CORS_HEADERS
+function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...CORS_HEADERS,
+      ...extraHeaders
     }
-  );
+  });
 }
 
+/* =========================
+   NORMALIZE TEXT
+========================= */
 
-/* =========================================================
-   ESCAPE / CLEAN HELPERS
-========================================================= */
+function getMessageText(message) {
+  if (!message) return "";
 
-function safeString(value) {
-  return typeof value === "string" ? value : "";
+  if (typeof message.content === "string") {
+    return message.content;
+  }
+
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+
+        return item?.text || "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (message.content != null) {
+    try {
+      return JSON.stringify(message.content);
+    } catch {
+      return "";
+    }
+  }
+
+  return "";
 }
 
-function stripDataUrl(dataUrl) {
-  if (typeof dataUrl !== "string") {
+/* =========================
+   DATA URL PARSER
+========================= */
+
+function parseDataUrl(dataUrl) {
+  if (
+    typeof dataUrl !== "string" ||
+    !dataUrl.startsWith("data:")
+  ) {
     return null;
   }
 
   const match = dataUrl.match(
-    /^data:([^;]+);base64,(.+)$/s
+    /^data:([^;,]+)(?:;charset=[^;,]+)?;base64,(.+)$/s
   );
 
   if (!match) {
@@ -85,117 +106,10 @@ function stripDataUrl(dataUrl) {
   };
 }
 
-
-/* =========================================================
-   CONVERT FRONTEND MESSAGE TO GEMINI CONTENT
-========================================================= */
-
-function messageToGemini(message) {
-  if (!message || typeof message !== "object") {
-    return null;
-  }
-
-  const role =
-    message.role === "assistant" ||
-    message.role === "model"
-      ? "model"
-      : "user";
-
-  const parts = [];
-
-  /* -------------------------
-     TEXT
-  ------------------------- */
-
-  let text = "";
-
-  if (typeof message.content === "string") {
-    text = message.content;
-  } else if (Array.isArray(message.content)) {
-    text = message.content
-      .map((item) => {
-        if (typeof item === "string") {
-          return item;
-        }
-
-        return item?.text || "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  } else if (message.content != null) {
-    try {
-      text = JSON.stringify(message.content);
-    } catch {
-      text = "";
-    }
-  }
-
-  if (text.trim()) {
-    parts.push({
-      text: text.trim()
-    });
-  }
-
-
-  /* -------------------------
-     IMAGE
-  ------------------------- */
-
-  if (message.image) {
-    const image = stripDataUrl(message.image);
-
-    if (image) {
-      parts.push({
-        inlineData: {
-          mimeType: image.mimeType,
-          data: image.data
-        }
-      });
-    }
-  }
-
-
-  /* -------------------------
-     FILE TEXT
-  ------------------------- */
-
-  if (message.file) {
-    const fileName =
-      safeString(message.file.name);
-
-    const fileType =
-      safeString(message.file.type);
-
-    const fileText =
-      safeString(message.file.text);
-
-    if (fileText.trim()) {
-      parts.push({
-        text:
-          `\n\n[Attached file: ${fileName || "file"}]\n` +
-          `Type: ${fileType || "unknown"}\n\n` +
-          fileText.slice(0, 120000)
-      });
-    } else if (fileName) {
-      parts.push({
-        text:
-          `\n\n[Attached file: ${fileName}]\n` +
-          `The file was attached, but readable text was not extracted by the browser.`
-      });
-    }
-  }
-
-
-  if (!parts.length) {
-    return null;
-  }
-
-  return {
-    role,
-    parts
-  };
-}
-
+/* =========================
+   NORMALIZE MESSAGES
+   INCLUDING IMAGES/FILES
+========================= */
 
 function normalizeMessages(messages) {
   if (!Array.isArray(messages)) {
@@ -203,14 +117,80 @@ function normalizeMessages(messages) {
   }
 
   return messages
-    .map(messageToGemini)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((message) => {
+      const role =
+        message.role === "assistant" ||
+        message.role === "model"
+          ? "model"
+          : "user";
+
+      const parts = [];
+
+      const text = getMessageText(message);
+
+      if (text.trim()) {
+        parts.push({
+          text: text.trim()
+        });
+      }
+
+      /* =========================
+         IMAGE SUPPORT
+      ========================= */
+
+      if (message.image) {
+        const image = parseDataUrl(message.image);
+
+        if (image) {
+          parts.push({
+            inlineData: {
+              mimeType: image.mimeType,
+              data: image.data
+            }
+          });
+        }
+      }
+
+      /* =========================
+         FILE SUPPORT
+      ========================= */
+
+      if (message.file) {
+        const file = message.file;
+
+        if (
+          typeof file.text === "string" &&
+          file.text.trim()
+        ) {
+          parts.push({
+            text:
+              `\n\nAttached file: ${file.name || "file"}\n` +
+              file.text
+          });
+        } else if (file.name) {
+          parts.push({
+            text:
+              `\n\nAttached file: ${file.name}`
+          });
+        }
+      }
+
+      return {
+        role,
+        parts
+      };
+    })
+    .filter(
+      (message) =>
+        Array.isArray(message.parts) &&
+        message.parts.length > 0
+    );
 }
 
-
-/* =========================================================
-   GEMINI RESPONSE TEXT
-========================================================= */
+/* =========================
+   EXTRACT GEMINI TEXT
+========================= */
 
 function extractGeminiText(data) {
   if (!data?.candidates?.length) {
@@ -233,345 +213,282 @@ function extractGeminiText(data) {
     .trim();
 }
 
+/* =========================
+   GEMINI ERROR MESSAGE
+========================= */
 
-/* =========================================================
-   SIMPLE WEB SEARCH
-   NO GOOGLE GEMINI GROUNDING
-   NO PAID SEARCH API
-========================================================= */
+function getGeminiErrorMessage(
+  status,
+  data
+) {
+  const apiError =
+    data?.error || {};
 
-async function searchWeb(query) {
-  const cleanQuery =
-    safeString(query)
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 300);
+  const message =
+    apiError?.message ||
+    data?.message ||
+    "";
 
-  if (!cleanQuery) {
-    return [];
-  }
+  const statusName =
+    apiError?.status ||
+    "";
 
-  const searchUrl =
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanQuery)}`;
-
-  let response;
-
-  try {
-    response = await fetch(
-      searchUrl,
-      {
-        method: "GET",
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; RAO-AI/1.0)"
-        }
-      }
+  if (status === 429) {
+    return (
+      "Gemini API quota/rate limit reached. " +
+      "Thodi der baad dobara try karein."
     );
-  } catch (error) {
-    console.error(
-      "Web search connection error:",
-      error
+  }
+
+  if (status === 503) {
+    return (
+      "Gemini service abhi temporarily busy hai. " +
+      "RAO AI automatically retry kar raha tha. " +
+      "Thodi der baad dobara try karein."
     );
-
-    return [];
   }
 
-  if (!response.ok) {
-    console.error(
-      "Web search failed:",
-      response.status
+  if (status === 408) {
+    return (
+      "Gemini request timeout ho gayi. " +
+      "Please dobara try karein."
     );
-
-    return [];
   }
 
-  let html = "";
-
-  try {
-    html = await response.text();
-  } catch (error) {
-    console.error(
-      "Web search response error:",
-      error
+  if (status === 400) {
+    return (
+      "Gemini request mein problem hai. " +
+      (message || "Request invalid hai.")
     );
-
-    return [];
   }
 
-  if (!html) {
-    return [];
-  }
-
-
-  /* -------------------------
-     Extract result blocks
-  ------------------------- */
-
-  const results = [];
-
-  const blocks =
-    html.split(
-      /result__body|result__a/g
+  if (status === 401) {
+    return (
+      "Gemini API key invalid ya expired hai."
     );
-
-  for (
-    let i = 0;
-    i < blocks.length &&
-    results.length < 6;
-    i++
-  ) {
-    const block = blocks[i];
-
-    if (!block) continue;
-
-    const titleMatch =
-      block.match(
-        /class="result__title"[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i
-      );
-
-    const linkMatch =
-      block.match(
-        /class="result__url"[^>]*>([\s\S]*?)<\/a>/i
-      );
-
-    const snippetMatch =
-      block.match(
-        /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i
-      );
-
-    let title =
-      titleMatch?.[1] || "";
-
-    let url =
-      linkMatch?.[1] || "";
-
-    let snippet =
-      snippetMatch?.[1] || "";
-
-
-    title =
-      decodeHtml(stripTags(title))
-        .replace(/\s+/g, " ")
-        .trim();
-
-    url =
-      decodeHtml(stripTags(url))
-        .replace(/\s+/g, " ")
-        .trim();
-
-    snippet =
-      decodeHtml(stripTags(snippet))
-        .replace(/\s+/g, " ")
-        .trim();
-
-
-    if (
-      title &&
-      snippet
-    ) {
-      results.push({
-        title: title.slice(0, 300),
-        url: url.slice(0, 500),
-        snippet: snippet.slice(0, 700)
-      });
-    }
   }
 
-
-  /* -------------------------
-     Fallback parser
-  ------------------------- */
-
-  if (!results.length) {
-    const regex =
-      /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-
-    let match;
-
-    while (
-      (match = regex.exec(html)) &&
-      results.length < 6
-    ) {
-      const url =
-        decodeHtml(match[1] || "")
-          .trim();
-
-      const title =
-        decodeHtml(
-          stripTags(match[2] || "")
-        )
-          .replace(/\s+/g, " ")
-          .trim();
-
-      if (title) {
-        results.push({
-          title: title.slice(0, 300),
-          url: url.slice(0, 500),
-          snippet: ""
-        });
-      }
-    }
+  if (status === 403) {
+    return (
+      "Gemini API access allowed nahi hai. " +
+      "API key/project permissions check karein."
+    );
   }
 
-  return results;
-}
-
-
-/* =========================================================
-   HTML HELPERS
-========================================================= */
-
-function stripTags(value) {
-  return String(value || "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]*>/g, " ");
-}
-
-function decodeHtml(value) {
-  return String(value || "")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&nbsp;/gi, " ");
-}
-
-
-/* =========================================================
-   FIND LAST USER MESSAGE
-========================================================= */
-
-function getLastUserMessage(messages) {
-  if (!Array.isArray(messages)) {
-    return "";
+  if (status === 404) {
+    return (
+      "Gemini model available nahi hai. " +
+      `Current model: ${GEMINI_MODEL}`
+    );
   }
 
-  for (
-    let i = messages.length - 1;
-    i >= 0;
-    i--
-  ) {
-    if (
-      messages[i]?.role === "user"
-    ) {
-      const content =
-        messages[i]?.content;
-
-      if (typeof content === "string") {
-        return content.trim();
-      }
-
-      if (Array.isArray(content)) {
-        return content
-          .map((item) =>
-            typeof item === "string"
-              ? item
-              : item?.text || ""
-          )
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-      }
-    }
-  }
-
-  return "";
-}
-
-
-/* =========================================================
-   BUILD WEB SEARCH CONTEXT
-========================================================= */
-
-function buildSearchContext(results) {
-  if (!Array.isArray(results) || !results.length) {
-    return "";
-  }
-
-  const lines = results.map(
-    (result, index) => {
-      return (
-        `SOURCE ${index + 1}\n` +
-        `Title: ${result.title}\n` +
-        `URL: ${result.url}\n` +
-        `Snippet: ${result.snippet}\n`
-      );
-    }
+  return (
+    `Gemini API request failed (${status}).` +
+    (
+      message || statusName
+        ? ` ${message || statusName}`
+        : ""
+    )
   );
-
-  return `
-CURRENT WEB SEARCH RESULTS
-
-The following information was retrieved from a web search.
-Use it to answer the user's question when relevant.
-
-${lines.join("\n")}
-
-IMPORTANT:
-- Do not invent information that is not supported by these results.
-- If the results do not answer the question, say so.
-- When useful, mention the source title or URL naturally.
-`;
 }
 
+/* =========================
+   WAIT
+========================= */
 
-/* =========================================================
-   MAIN WORKER
-========================================================= */
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/* =========================
+   GEMINI REQUEST WITH RETRY
+========================= */
+
+async function callGemini(
+  apiKey,
+  geminiRequest
+) {
+  const maxAttempts = 4;
+
+  /*
+   * Official-style exponential backoff:
+   *
+   * Attempt 1 -> immediate
+   * Attempt 2 -> ~1 second
+   * Attempt 3 -> ~2 seconds
+   * Attempt 4 -> ~4 seconds
+   */
+
+  const delays = [
+    0,
+    1000,
+    2000,
+    4000
+  ];
+
+  let lastStatus = 500;
+  let lastData = null;
+
+  for (
+    let attempt = 0;
+    attempt < maxAttempts;
+    attempt++
+  ) {
+    if (delays[attempt] > 0) {
+      const jitter =
+        Math.floor(
+          Math.random() * 500
+        );
+
+      await sleep(
+        delays[attempt] + jitter
+      );
+    }
+
+    try {
+      const response =
+        await fetch(
+          `${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            body: JSON.stringify(
+              geminiRequest
+            )
+          }
+        );
+
+      let data = null;
+
+      try {
+        data =
+          await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (response.ok) {
+        return {
+          ok: true,
+          status: response.status,
+          data
+        };
+      }
+
+      lastStatus =
+        response.status;
+
+      lastData = data;
+
+      /*
+       * Retry only transient errors.
+       *
+       * 408 = timeout
+       * 429 = rate limit/quota
+       * 500 = server error
+       * 502 = bad gateway
+       * 503 = service unavailable
+       * 504 = gateway timeout
+       */
+
+      const retryable =
+        response.status === 408 ||
+        response.status === 429 ||
+        response.status === 500 ||
+        response.status === 502 ||
+        response.status === 503 ||
+        response.status === 504;
+
+      if (!retryable) {
+        break;
+      }
+
+    } catch (error) {
+      /*
+       * Network failure.
+       * Retry it.
+       */
+
+      lastStatus = 502;
+
+      lastData = {
+        error: {
+          message:
+            error?.message ||
+            "Network error"
+        }
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    status: lastStatus,
+    data: lastData
+  };
+}
+
+/* =========================
+   WORKER
+========================= */
 
 export default {
   async fetch(request, env) {
-
     const url =
       new URL(request.url);
 
     const path =
       url.pathname;
 
-
-    /* -------------------------
+    /* =========================
        CORS
-    ------------------------- */
+    ========================= */
 
     if (
-      request.method === "OPTIONS"
+      request.method ===
+      "OPTIONS"
     ) {
-      return new Response(null, {
-        status: 204,
-        headers: CORS_HEADERS
-      });
+      return new Response(
+        null,
+        {
+          status: 204,
+          headers: CORS_HEADERS
+        }
+      );
     }
 
-
-    /* -------------------------
+    /* =========================
        HEALTH CHECK
-    ------------------------- */
+    ========================= */
 
     if (
-      request.method === "GET"
+      request.method ===
+      "GET"
     ) {
       return json({
         ok: true,
         service: "RAO AI",
         model: GEMINI_MODEL,
         creator: "Suraj Kumar",
-        webSearch:
-          "External search mode available",
         message:
           "RAO AI Worker is running."
       });
     }
 
-
-    /* -------------------------
+    /* =========================
        METHOD CHECK
-    ------------------------- */
+    ========================= */
 
     if (
-      request.method !== "POST"
+      request.method !==
+      "POST"
     ) {
       return json(
         {
@@ -583,13 +500,12 @@ export default {
       );
     }
 
-
-    /* -------------------------
+    /* =========================
        API KEY
-    ------------------------- */
+    ========================= */
 
     const apiKey =
-      env?.GEMINI_API_KEY;
+      env.GEMINI_API_KEY;
 
     if (!apiKey) {
       return json(
@@ -602,17 +518,16 @@ export default {
       );
     }
 
-
-    /* -------------------------
+    /* =========================
        READ BODY
-    ------------------------- */
+    ========================= */
 
     let body;
 
     try {
       body =
         await request.json();
-    } catch (error) {
+    } catch {
       return json(
         {
           ok: false,
@@ -623,31 +538,42 @@ export default {
       );
     }
 
+    /* =========================
+       MESSAGES
+    ========================= */
 
-    /* -------------------------
-       NORMALIZE MESSAGES
-    ------------------------- */
+    let messages =
+      normalizeMessages(
+        body.messages
+      );
 
-    let originalMessages =
-      Array.isArray(body?.messages)
-        ? body.messages
-        : [];
+    /*
+     * Support:
+     *
+     * {
+     *   message: "Hello"
+     * }
+     */
 
     if (
-      !originalMessages.length &&
-      typeof body?.message === "string"
+      !messages.length &&
+      typeof body.message ===
+        "string"
     ) {
-      originalMessages = [
+      messages = [
         {
           role: "user",
-          content:
-            body.message
+          parts: [
+            {
+              text:
+                body.message
+            }
+          ]
         }
       ];
     }
 
-
-    if (!originalMessages.length) {
+    if (!messages.length) {
       return json(
         {
           ok: false,
@@ -658,107 +584,9 @@ export default {
       );
     }
 
-
-    let messages =
-      normalizeMessages(
-        originalMessages
-      );
-
-
-    if (!messages.length) {
-      return json(
-        {
-          ok: false,
-          error:
-            "No readable message content provided."
-        },
-        400
-      );
-    }
-
-
-    /* =====================================================
-       OPTIONAL WEB SEARCH
-    ===================================================== */
-
-    let searchResults = [];
-
-    if (
-      body?.webSearch === true
-    ) {
-      const searchQuery =
-        getLastUserMessage(
-          originalMessages
-        );
-
-      if (searchQuery) {
-        searchResults =
-          await searchWeb(
-            searchQuery
-          );
-      }
-
-      const searchContext =
-        buildSearchContext(
-          searchResults
-        );
-
-      if (searchContext) {
-
-        /*
-         * Add search information
-         * to the latest user message.
-         */
-
-        for (
-          let i = messages.length - 1;
-          i >= 0;
-          i--
-        ) {
-          if (
-            messages[i].role === "user"
-          ) {
-            messages[i].parts.push({
-              text:
-                "\n\n" +
-                searchContext
-            });
-
-            break;
-          }
-        }
-
-      } else {
-
-        /*
-         * Tell Gemini that search was
-         * requested but no results arrived.
-         */
-
-        for (
-          let i = messages.length - 1;
-          i >= 0;
-          i--
-        ) {
-          if (
-            messages[i].role === "user"
-          ) {
-            messages[i].parts.push({
-              text:
-                "\n\n" +
-                "[Web search was requested, but no search results were returned. Do not pretend that live web results were found.]"
-            });
-
-            break;
-          }
-        }
-      }
-    }
-
-
-    /* =====================================================
+    /* =========================
        GEMINI REQUEST
-    ===================================================== */
+    ========================= */
 
     const geminiRequest = {
       systemInstruction: {
@@ -770,7 +598,8 @@ export default {
         ]
       },
 
-      contents: messages,
+      contents:
+        messages,
 
       generationConfig: {
         maxOutputTokens: 4096,
@@ -782,205 +611,91 @@ export default {
       }
     };
 
+    /* =========================
+       GOOGLE SEARCH
+    ========================= */
 
-    /* =====================================================
+    if (
+      body.webSearch === true
+    ) {
+      geminiRequest.tools = [
+        {
+          google_search: {}
+        }
+      ];
+    }
+
+    /* =========================
        CALL GEMINI
-    ===================================================== */
+    ========================= */
 
-    let response;
-
-    try {
-      response =
-        await fetch(
-          `${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`,
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json"
-            },
-
-            body:
-              JSON.stringify(
-                geminiRequest
-              )
-          }
-        );
-
-    } catch (error) {
-
-      console.error(
-        "Gemini connection error:",
-        error
+    const result =
+      await callGemini(
+        apiKey,
+        geminiRequest
       );
 
-      return json(
-        {
-          ok: false,
-          error:
-            "Could not connect to Gemini API.",
-          details:
-            error?.message ||
-            "Network error"
-        },
-        502
-      );
-    }
-
-
-    /* =====================================================
-       READ GEMINI RESPONSE
-    ===================================================== */
-
-    let data;
-
-    try {
-      data =
-        await response.json();
-
-    } catch (error) {
-
-      return json(
-        {
-          ok: false,
-          error:
-            "Gemini returned an invalid response.",
-          status:
-            response.status
-        },
-        502
-      );
-    }
-
-
-    /* =====================================================
+    /* =========================
        GEMINI ERROR
-    ===================================================== */
+    ========================= */
 
-    if (!response.ok) {
-
-      console.error(
-        "Gemini API error:",
-        response.status,
-        data
-      );
-
-
-      if (
-        response.status === 429
-      ) {
-        return json(
-          {
-            ok: false,
-            error:
-              "Gemini API quota/rate limit reached. Please wait and try again later.",
-            status: 429,
-            details:
-              data?.error?.message ||
-              data?.error ||
-              data
-          },
-          429
-        );
-      }
-
-
-      if (
-        response.status === 400
-      ) {
-        return json(
-          {
-            ok: false,
-            error:
-              "Gemini rejected the request. The model or request format may not be supported.",
-            status: 400,
-            details:
-              data?.error?.message ||
-              data?.error ||
-              data
-          },
-          400
-        );
-      }
-
-
-      if (
-        response.status === 401 ||
-        response.status === 403
-      ) {
-        return json(
-          {
-            ok: false,
-            error:
-              "Gemini API key is invalid or does not have permission for this project.",
-            status:
-              response.status,
-            details:
-              data?.error?.message ||
-              data?.error ||
-              data
-          },
-          response.status
-        );
-      }
-
-
+    if (!result.ok) {
       return json(
         {
           ok: false,
+
           error:
-            `Gemini API request failed (${response.status}).`,
+            getGeminiErrorMessage(
+              result.status,
+              result.data
+            ),
+
           status:
-            response.status,
+            result.status,
+
+          retryAttempted: true,
+
           details:
-            data?.error ||
-            data
+            result.data?.error ||
+            null
         },
-        response.status
+        result.status
       );
     }
 
-
-    /* =====================================================
-       EXTRACT REPLY
-    ===================================================== */
+    /* =========================
+       EXTRACT RESPONSE
+    ========================= */
 
     const reply =
       extractGeminiText(
-        data
+        result.data
       );
-
 
     if (!reply) {
       return json(
         {
           ok: false,
+
           error:
             "Gemini returned no text.",
-          details:
-            data
+
+          retryAttempted: false
         },
         502
       );
     }
 
-
-    /* =====================================================
+    /* =========================
        SUCCESS
-    ===================================================== */
+    ========================= */
 
     return json({
       ok: true,
       service: "RAO AI",
       model: GEMINI_MODEL,
       creator: "Suraj Kumar",
-      webSearch:
-        body?.webSearch === true,
-      searchResults:
-        searchResults.length,
-      message:
-        reply
+      message: reply
     });
   }
 };
