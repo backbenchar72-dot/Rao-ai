@@ -18,11 +18,9 @@ let isListening = false;
 
 /* =========================
    TEXT TO SPEECH
-   AI MESSAGE KO TAB BOLEGA
-   JAB USER SPEAKER BUTTON DABAYEGA
+   AI TAB BOLEGA JAB USER
+   SPEAKER BUTTON DABAYEGA
 ========================= */
-
-let currentSpeech = null;
 
 function speakText(text, button = null) {
   if (!("speechSynthesis" in window)) {
@@ -32,7 +30,6 @@ function speakText(text, button = null) {
 
   if (!text || !text.trim()) return;
 
-  // Agar pehle se bol raha hai to stop
   if (speechSynthesis.speaking) {
     speechSynthesis.cancel();
 
@@ -40,18 +37,18 @@ function speakText(text, button = null) {
       button.textContent = "🔊";
     }
 
-    currentSpeech = null;
     return;
   }
 
-  const cleanText = text
+  const cleanText = String(text)
     .replace(/[*_`#]/g, "")
     .replace(/\[(.*?)\]\(.*?\)/g, "$1")
     .trim();
 
+  if (!cleanText) return;
+
   const utterance = new SpeechSynthesisUtterance(cleanText);
 
-  // Hindi ke liye Hindi voice
   utterance.lang = "hi-IN";
   utterance.rate = 1;
   utterance.pitch = 1;
@@ -59,11 +56,11 @@ function speakText(text, button = null) {
 
   const voices = speechSynthesis.getVoices();
 
-  const hindiVoice =
-    voices.find(v =>
-      v.lang &&
-      v.lang.toLowerCase().startsWith("hi")
-    );
+  const hindiVoice = voices.find(
+    (voice) =>
+      voice.lang &&
+      voice.lang.toLowerCase().startsWith("hi")
+  );
 
   if (hindiVoice) {
     utterance.voice = hindiVoice;
@@ -77,29 +74,21 @@ function speakText(text, button = null) {
     if (button) {
       button.textContent = "🔊";
     }
-
-    currentSpeech = null;
   };
 
   utterance.onerror = () => {
     if (button) {
       button.textContent = "🔊";
     }
-
-    currentSpeech = null;
   };
-
-  currentSpeech = utterance;
 
   speechSynthesis.cancel();
 
-  // Thoda delay mobile browser compatibility ke liye
   setTimeout(() => {
     speechSynthesis.speak(utterance);
   }, 50);
 }
 
-/* Browser voices load hone do */
 if ("speechSynthesis" in window) {
   speechSynthesis.onvoiceschanged = () => {
     speechSynthesis.getVoices();
@@ -112,10 +101,13 @@ if ("speechSynthesis" in window) {
 
 function addMessage(text, who = "assistant") {
   const row = document.createElement("div");
+
   row.className = `msg ${who}`;
 
   row.innerHTML = `
-    <div class="avatar">${who === "user" ? "You" : "✦"}</div>
+    <div class="avatar">
+      ${who === "user" ? "You" : "✦"}
+    </div>
 
     <div class="message-content">
       <div class="bubble"></div>
@@ -141,13 +133,12 @@ function addMessage(text, who = "assistant") {
 
   const bubble = row.querySelector(".bubble");
 
-  bubble.textContent = text;
+  bubble.textContent = text || "";
 
   chat.appendChild(row);
 
   chat.scrollTop = chat.scrollHeight;
 
-  // AI message ke speaker button ko connect karo
   if (who === "assistant") {
     const speakBtn = row.querySelector(".speak-btn");
 
@@ -166,7 +157,7 @@ function addMessage(text, who = "assistant") {
 ========================= */
 
 function clearWelcome() {
-  const welcome = chat.querySelector(".welcome");
+  const welcome = chat?.querySelector(".welcome");
 
   if (welcome) {
     welcome.remove();
@@ -174,7 +165,7 @@ function clearWelcome() {
 }
 
 /* =========================
-   WEB SEARCH BUTTON
+   WEB SEARCH
 ========================= */
 
 if (webSearchBtn) {
@@ -190,6 +181,14 @@ if (webSearchBtn) {
       webSearchEnabled
         ? "🌐 Web Search: ON"
         : "🌐 Web Search: OFF";
+
+    const note = document.getElementById("webSearchNote");
+
+    if (note) {
+      note.textContent = webSearchEnabled
+        ? "Live web information is ON"
+        : "Current web information is off";
+    }
   });
 }
 
@@ -239,9 +238,7 @@ if (micBtn && SpeechRecognition) {
 
     isListening = false;
 
-    micBtn.classList.remove(
-      "listening"
-    );
+    micBtn.classList.remove("listening");
 
     micBtn.textContent = "🎤";
   };
@@ -249,9 +246,7 @@ if (micBtn && SpeechRecognition) {
   recognition.onend = () => {
     isListening = false;
 
-    micBtn.classList.remove(
-      "listening"
-    );
+    micBtn.classList.remove("listening");
 
     micBtn.textContent = "🎤";
   };
@@ -270,14 +265,7 @@ if (micBtn && SpeechRecognition) {
       );
     }
   });
-}
-
-/* =========================
-   BROWSER DOES NOT SUPPORT
-   SPEECH RECOGNITION
-========================= */
-
-else if (micBtn) {
+} else if (micBtn) {
   micBtn.addEventListener("click", () => {
     alert(
       "Voice input is not supported in this browser. Chrome browser try karein."
@@ -297,23 +285,19 @@ if (uploadBtn && fileUpload) {
   fileUpload.addEventListener(
     "change",
     async () => {
-      const file =
-        fileUpload.files?.[0];
+      const file = fileUpload.files?.[0];
 
       if (!file) return;
 
-      if (
-        file.size >
-        15 * 1024 * 1024
-      ) {
-        alert(
-          "File 15 MB se chhoti rakho."
-        );
+      if (file.size > 15 * 1024 * 1024) {
+        alert("File 15 MB se chhoti rakho.");
 
         resetAttachment();
 
         return;
       }
+
+      selectedImage = null;
 
       selectedFile = {
         name: file.name,
@@ -343,29 +327,29 @@ if (uploadBtn && fileUpload) {
         ];
 
         if (readable.includes(ext)) {
-          const text =
-            await file.text();
+          const text = await file.text();
 
           selectedFile.text =
-            text.slice(
-              0,
-              120000
-            );
-        }
-
-        else if (
-          file.type.startsWith(
-            "image/"
-          )
+            text.slice(0, 120000);
+        } else if (
+          file.type.startsWith("image/")
         ) {
           selectedImage =
             await fileToDataURL(file);
+        } else if (
+          file.type === "application/pdf" ||
+          ext === "pdf"
+        ) {
+          /*
+           * Browser PDF text extraction is not
+           * enabled here yet. File metadata is
+           * still preserved so the UI does not break.
+           */
+          selectedFile.text =
+            "PDF file attached: " + file.name;
         }
 
-        addMessage(
-          `📎 ${file.name} attached`,
-          "assistant"
-        );
+        showAttachmentPreview(file);
 
       } catch (error) {
         console.error(
@@ -374,7 +358,7 @@ if (uploadBtn && fileUpload) {
         );
 
         alert(
-          "File read nahi ho paayi. TXT, PDF, image ya supported file try karo."
+          "File read nahi ho paayi."
         );
 
         resetAttachment();
@@ -390,11 +374,11 @@ if (uploadBtn && fileUpload) {
 function fileToDataURL(file) {
   return new Promise(
     (resolve, reject) => {
-      const reader =
-        new FileReader();
+      const reader = new FileReader();
 
-      reader.onload = () =>
+      reader.onload = () => {
         resolve(reader.result);
+      };
 
       reader.onerror = reject;
 
@@ -404,3 +388,463 @@ function fileToDataURL(file) {
 }
 
 /* =========================
+   ATTACHMENT PREVIEW
+========================= */
+
+function showAttachmentPreview(file) {
+  const previewWrap =
+    document.getElementById("previewWrap");
+
+  const preview =
+    document.getElementById("preview");
+
+  const info =
+    document.getElementById("filePreviewInfo");
+
+  if (!previewWrap || !info) return;
+
+  previewWrap.classList.remove("hidden");
+
+  info.innerHTML = `
+    <strong>${escapeHtml(file.name)}</strong>
+    <span>${formatFileSize(file.size)}</span>
+  `;
+
+  if (
+    preview &&
+    file.type.startsWith("image/") &&
+    selectedImage
+  ) {
+    preview.src = selectedImage;
+
+    preview.style.display = "block";
+  } else if (preview) {
+    preview.removeAttribute("src");
+
+    preview.style.display = "none";
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes)) {
+    return "";
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/* =========================
+   RESET ATTACHMENT
+========================= */
+
+function resetAttachment() {
+  selectedImage = null;
+  selectedFile = null;
+
+  if (fileUpload) {
+    fileUpload.value = "";
+  }
+
+  const previewWrap =
+    document.getElementById("previewWrap");
+
+  const preview =
+    document.getElementById("preview");
+
+  const info =
+    document.getElementById("filePreviewInfo");
+
+  if (previewWrap) {
+    previewWrap.classList.add("hidden");
+  }
+
+  if (preview) {
+    preview.removeAttribute("src");
+  }
+
+  if (info) {
+    info.textContent = "";
+  }
+}
+
+if (removeFile) {
+  removeFile.addEventListener(
+    "click",
+    resetAttachment
+  );
+}
+
+/* =========================
+   SEND MESSAGE
+   CLOUDflare Worker -> GEMINI
+========================= */
+
+if (form) {
+  form.addEventListener(
+    "submit",
+    async (event) => {
+      event.preventDefault();
+
+      const text =
+        input?.value?.trim() || "";
+
+      if (
+        !text &&
+        !selectedImage &&
+        !selectedFile
+      ) {
+        return;
+      }
+
+      clearWelcome();
+
+      const displayText =
+        text ||
+        (
+          selectedImage
+            ? "Please analyze this image."
+            : "Please read this file."
+        );
+
+      addMessage(
+        displayText,
+        "user"
+      );
+
+      input.value = "";
+
+      const loading =
+        addMessage(
+          "Thinking...",
+          "assistant"
+        );
+
+      const sendBtn =
+        document.getElementById("send");
+
+      if (input) {
+        input.disabled = true;
+      }
+
+      if (micBtn) {
+        micBtn.disabled = true;
+      }
+
+      if (uploadBtn) {
+        uploadBtn.disabled = true;
+      }
+
+      if (sendBtn) {
+        sendBtn.disabled = true;
+      }
+
+      if (webSearchBtn) {
+        webSearchBtn.disabled = true;
+      }
+
+      try {
+        const currentMessage = {
+          role: "user",
+          content: displayText
+        };
+
+        /*
+         * Keep image/file information in the
+         * frontend conversation state.
+         */
+        if (selectedImage) {
+          currentMessage.image =
+            selectedImage;
+        }
+
+        if (selectedFile) {
+          currentMessage.file =
+            selectedFile;
+        }
+
+        messages.push(
+          currentMessage
+        );
+
+        /*
+         * IMPORTANT:
+         * Your Worker endpoint is /chat.
+         * Gemini API key stays inside the
+         * Cloudflare Worker secret.
+         */
+        const response =
+          await fetch(
+            "/chat",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              body: JSON.stringify({
+                messages: messages,
+                webSearch:
+                  webSearchEnabled
+              })
+            }
+          );
+
+        const rawText =
+          await response.text();
+
+        let data = null;
+
+        if (rawText.trim()) {
+          try {
+            data =
+              JSON.parse(
+                rawText
+              );
+          } catch (jsonError) {
+            console.error(
+              "Invalid JSON from Worker:",
+              rawText
+            );
+
+            throw new Error(
+              "Worker ne invalid response bheja."
+            );
+          }
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              `Server error (${response.status})`
+          );
+        }
+
+        /*
+         * Your Worker currently returns:
+         *
+         * {
+         *   ok: true,
+         *   message: "Gemini reply"
+         * }
+         *
+         * So message is checked first.
+         */
+        const reply =
+          data?.message ||
+          data?.reply ||
+          data?.output_text ||
+          "";
+
+        if (
+          typeof reply !== "string" ||
+          !reply.trim()
+        ) {
+          throw new Error(
+            "Gemini se empty response mila."
+          );
+        }
+
+        loading.textContent =
+          reply;
+
+        messages.push({
+          role: "assistant",
+          content: reply
+        });
+
+      } catch (error) {
+        console.error(
+          "RAO AI ERROR:",
+          error
+        );
+
+        /*
+         * Remove the user message from
+         * conversation state if the request
+         * failed, so a retry does not create
+         * duplicate history.
+         */
+        if (
+          messages.length &&
+          messages[messages.length - 1]
+            ?.role === "user"
+        ) {
+          messages.pop();
+        }
+
+        loading.textContent =
+          "❌ Error: " +
+          (
+            error?.message ||
+            "RAO AI se response nahi mila."
+          );
+
+      } finally {
+        resetAttachment();
+
+        if (input) {
+          input.disabled = false;
+        }
+
+        if (micBtn) {
+          micBtn.disabled = false;
+        }
+
+        if (uploadBtn) {
+          uploadBtn.disabled = false;
+        }
+
+        if (sendBtn) {
+          sendBtn.disabled = false;
+        }
+
+        if (webSearchBtn) {
+          webSearchBtn.disabled = false;
+        }
+
+        input?.focus();
+      }
+    }
+  );
+}
+
+/* =========================
+   ENTER TO SEND
+========================= */
+
+if (input) {
+  input.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key === "Enter" &&
+        !event.shiftKey
+      ) {
+        event.preventDefault();
+
+        if (!input.disabled) {
+          form?.requestSubmit();
+        }
+      }
+    }
+  );
+
+  input.addEventListener(
+    "input",
+    () => {
+      input.style.height = "auto";
+
+      input.style.height =
+        Math.min(
+          input.scrollHeight,
+          140
+        ) + "px";
+    }
+  );
+}
+
+/* =========================
+   NEW CHAT
+========================= */
+
+if (newChatBtn) {
+  newChatBtn.addEventListener(
+    "click",
+    () => {
+      if (
+        "speechSynthesis" in window
+      ) {
+        speechSynthesis.cancel();
+      }
+
+      messages = [];
+
+      selectedImage = null;
+      selectedFile = null;
+
+      webSearchEnabled = false;
+
+      if (fileUpload) {
+        fileUpload.value = "";
+      }
+
+      if (webSearchBtn) {
+        webSearchBtn.classList.remove(
+          "active"
+        );
+
+        webSearchBtn.textContent =
+          "🌐 Web Search: OFF";
+
+        webSearchBtn.disabled = false;
+      }
+
+      const note =
+        document.getElementById(
+          "webSearchNote"
+        );
+
+      if (note) {
+        note.textContent =
+          "Current web information is off";
+      }
+
+      resetAttachment();
+
+      if (chat) {
+        chat.innerHTML = `
+          <div class="welcome">
+            <div class="logo">✦</div>
+
+            <h1>Welcome to RAO AI</h1>
+
+            <p>
+              Ask anything, upload an image/PDF/file,
+              speak, or turn on Web Search for
+              current information.
+            </p>
+          </div>
+        `;
+      }
+
+      if (input) {
+        input.value = "";
+        input.style.height = "auto";
+        input.disabled = false;
+        input.focus();
+      }
+    }
+  );
+}
+
+/* =========================
+   PAGE READY
+========================= */
+
+window.addEventListener(
+  "load",
+  () => {
+    if (input) {
+      input.focus();
+    }
+  }
+);
