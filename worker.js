@@ -10,6 +10,31 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
 
+const DEFAULT_SYSTEM_INSTRUCTION = `
+You are RAO AI, a helpful AI assistant.
+
+IMPORTANT IDENTITY RULES:
+- Your name is RAO AI.
+- The creator/developer of RAO AI is Suraj Kumar.
+- If the user asks "Who created you?", "Who is your creator?", "RAO AI kisne banaya?", "Creator kaun hai?", or similar questions, answer clearly:
+  "RAO AI ko Suraj Kumar ne create kiya hai."
+- Never say that Google created RAO AI.
+- Never invent another creator name.
+- Do not claim that RAO AI was created by Google, OpenAI, Microsoft, or any other company.
+- If the user asks about the creator, always identify Suraj Kumar as the creator.
+
+LANGUAGE RULE:
+- Reply in the same language as the user whenever possible.
+- If the user writes Hindi/Hinglish, reply in Hindi/Hinglish.
+- If the user writes English, reply in English.
+- For greetings, reply naturally in the same language.
+
+BEHAVIOR:
+- Be helpful, accurate, friendly and concise.
+- If you do not know something, say so instead of inventing facts.
+- Do not reveal secret API keys or server environment variables.
+`;
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -17,58 +42,6 @@ function json(data, status = 200) {
   });
 }
 
-/*
-  RAO AI IDENTITY
-*/
-const DEFAULT_SYSTEM_INSTRUCTION = `
-You are RAO AI, a personal AI assistant.
-
-IMPORTANT IDENTITY RULES:
-
-1. Your name is RAO AI.
-
-2. Your creator/developer is Suraj Kumar.
-
-3. If the user asks:
-   - "Rao AI ko kisne create kiya?"
-   - "Rao AI ka creator kaun hai?"
-   - "Tumhe kisne banaya?"
-   - "Who created Rao AI?"
-   - "Who is your creator?"
-   - or any similar question,
-
-   ALWAYS answer:
-   "RAO AI ko Suraj Kumar ne create kiya hai."
-
-4. NEVER say that Google created RAO AI.
-
-5. NEVER say that OpenAI created RAO AI.
-
-6. NEVER say that Gemini created RAO AI.
-
-7. Gemini is only the AI model/API powering RAO AI.
-   It is NOT the creator of RAO AI.
-
-8. If asked about the underlying AI model, you can say:
-   "RAO AI Gemini model/API ka use karta hai."
-
-9. Keep the distinction clear:
-   Creator/Developer = Suraj Kumar
-   AI Model/API = Google Gemini
-
-10. Reply in the same language as the user whenever practical.
-   If the user speaks Hindi, reply in Hindi.
-   If the user speaks English, reply in English.
-   If the user speaks Hinglish, reply naturally in Hinglish.
-
-11. Be helpful, friendly and concise.
-
-12. Do not invent a different creator name.
-`;
-
-/*
-  Convert frontend messages to Gemini format
-*/
 function normalizeMessages(messages) {
   if (!Array.isArray(messages)) return [];
 
@@ -104,30 +77,23 @@ function normalizeMessages(messages) {
     .filter((message) => message.parts[0].text.trim());
 }
 
-/*
-  Extract Gemini text
-*/
 function extractGeminiText(data) {
-  if (!data?.candidates) return "";
+  if (!data?.candidates?.length) return "";
 
   return data.candidates
     .flatMap((candidate) => candidate?.content?.parts || [])
     .map((part) => part?.text || "")
     .filter(Boolean)
-    .join("");
+    .join("\n")
+    .trim();
 }
 
-/*
-  Worker
-*/
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    /*
-      CORS preflight
-    */
+    // CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -135,115 +101,66 @@ export default {
       });
     }
 
-    /*
-      Health check
-    */
-    if (
-      request.method === "GET" &&
-      (
-        path === "/" ||
-        path === "/api/chat" ||
-        path === "/chat" ||
-        path === "/.netlify/functions/chat"
-      )
-    ) {
+    // Health check
+    if (request.method === "GET") {
       return json({
         ok: true,
         service: "RAO AI",
-        creator: "Suraj Kumar",
         model: GEMINI_MODEL,
+        creator: "Suraj Kumar",
         message: "RAO AI Worker is running."
       });
     }
 
-    /*
-      Supported chat routes
-    */
-    const isChatRoute =
-      path === "/api/chat" ||
-      path === "/chat" ||
-      path === "/.netlify/functions/chat";
-
-    if (!isChatRoute) {
-      return json({
-        ok: false,
-        error: "Not found",
-        path
-      }, 404);
-    }
-
-    /*
-      Only POST allowed for chat
-    */
     if (request.method !== "POST") {
-      return json({
-        ok: false,
-        error: "Method not allowed"
-      }, 405);
+      return json(
+        {
+          ok: false,
+          error: "Method not allowed."
+        },
+        405
+      );
     }
 
-    /*
-      Gemini API key
-    */
-    if (!env.GEMINI_API_KEY) {
-      return json({
-        ok: false,
-        error: "GEMINI_API_KEY is not configured in Cloudflare."
-      }, 500);
-    }
-
-    /*
-      Read request body
-    */
+    // Read request body
     let body;
 
     try {
       body = await request.json();
-    } catch {
-      return json({
-        ok: false,
-        error: "Invalid JSON request."
-      }, 400);
+    } catch (error) {
+      return json(
+        {
+          ok: false,
+          error: "Invalid JSON request."
+        },
+        400
+      );
     }
 
-    /*
-      Accept different frontend formats
-    */
-    let messages = [];
+    // Support both messages[] and single message
+    let messages = normalizeMessages(body.messages);
 
-    if (Array.isArray(body?.messages)) {
-      messages = body.messages;
-    } else if (typeof body?.message === "string") {
+    if (!messages.length && typeof body.message === "string") {
       messages = [
         {
           role: "user",
-          content: body.message
-        }
-      ];
-    } else if (typeof body?.input === "string") {
-      messages = [
-        {
-          role: "user",
-          content: body.input
+          parts: [{ text: body.message }]
         }
       ];
     }
 
-    const contents = normalizeMessages(messages);
-
-    if (!contents.length) {
-      return json({
-        ok: false,
-        error: "No message provided."
-      }, 400);
+    if (!messages.length) {
+      return json(
+        {
+          ok: false,
+          error: "No message provided."
+        },
+        400
+      );
     }
 
-    /*
-      Gemini request
-    */
+    // Gemini request
     const geminiRequest = {
-      contents,
-
       systemInstruction: {
         parts: [
           {
@@ -252,27 +169,18 @@ export default {
         ]
       },
 
+      contents: messages,
+
       generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 4096
+        maxOutputTokens: 4096,
+        thinkingConfig: {
+          thinkingLevel: "medium"
+        }
       }
     };
 
-    /*
-      Optional additional system instruction
-    */
-    if (typeof body?.system === "string" && body.system.trim()) {
-      geminiRequest.systemInstruction.parts.push({
-        text:
-          "\nAdditional application instructions:\n" +
-          body.system.trim()
-      });
-    }
-
-    /*
-      Optional Google Search
-    */
-    if (body?.webSearch === true) {
+    // Optional Google Search grounding
+    if (body.webSearch === true) {
       geminiRequest.tools = [
         {
           google_search: {}
@@ -280,14 +188,25 @@ export default {
       ];
     }
 
-    /*
-      Call Gemini
-    */
+    // API key check
+    const apiKey = env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return json(
+        {
+          ok: false,
+          error: "GEMINI_API_KEY is not configured in Cloudflare Worker secrets."
+        },
+        500
+      );
+    }
+
+    // Call Gemini
     let response;
 
     try {
       response = await fetch(
-        `${GEMINI_URL}?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+        `${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`,
         {
           method: "POST",
           headers: {
@@ -297,14 +216,66 @@ export default {
         }
       );
     } catch (error) {
-      return json({
-        ok: false,
-        error: "Could not connect to Gemini API.",
-        details: error?.message || "Network error"
-      }, 502);
+      return json(
+        {
+          ok: false,
+          error: "Could not connect to Gemini API.",
+          details: error?.message || "Network error"
+        },
+        502
+      );
     }
 
-    /*
-      Read Gemini response
-    */
-   
+    // Read Gemini response
+    let data;
+
+    try {
+      data = await response.json();
+    } catch (error) {
+      return json(
+        {
+          ok: false,
+          error: "Gemini returned an invalid response.",
+          status: response.status
+        },
+        502
+      );
+    }
+
+    // Gemini API error
+    if (!response.ok) {
+      return json(
+        {
+          ok: false,
+          error: `Gemini API request failed (${response.status}).`,
+          status: response.status,
+          details: data?.error || data
+        },
+        response.status
+      );
+    }
+
+    // Extract answer
+    const reply = extractGeminiText(data);
+
+    if (!reply) {
+      return json(
+        {
+          ok: false,
+          error: "Gemini returned no text.",
+          details: data
+        },
+        502
+      );
+    }
+
+    // Success
+    return json({
+      ok: true,
+      service: "RAO AI",
+      model: GEMINI_MODEL,
+      creator: "Suraj Kumar",
+      message: reply
+    });
+  }
+};
