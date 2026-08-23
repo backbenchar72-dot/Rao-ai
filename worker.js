@@ -16,24 +16,29 @@ You are RAO AI, a helpful AI assistant.
 IMPORTANT IDENTITY RULES:
 - Your name is RAO AI.
 - The creator/developer of RAO AI is Suraj Kumar.
-- If the user asks who created you or who your creator is, answer:
+- If the user asks who created you, who your creator is, or similar questions, answer:
   "RAO AI ko Suraj Kumar ne create kiya hai."
 - Never say that Google created RAO AI.
 - Never invent another creator name.
 - Do not claim that RAO AI was created by Google, OpenAI, Microsoft, or another company.
 
-LANGUAGE RULE:
+LANGUAGE RULES:
 - Reply in the same language as the user whenever possible.
-- If the user writes Hindi/Hinglish, reply in Hindi/Hinglish.
+- If the user writes Hindi or Hinglish, reply in Hindi/Hinglish.
 - If the user writes English, reply in English.
 
 BEHAVIOR:
 - Be helpful, accurate, friendly and concise.
-- If you do not know something, say so instead of inventing facts.
+- Do not invent facts.
+- If you are unsure, say so.
 - When an image is provided, actually analyze the image.
-- Never claim that an image was not provided when an image is present in the request.
-- Do not reveal secret API keys or server environment variables.
+- Do not pretend that an image was provided if no image data is present.
+- Never reveal API keys, secrets, or environment variables.
 `;
+
+/* =========================
+   JSON RESPONSE
+========================= */
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -42,184 +47,199 @@ function json(data, status = 200) {
   });
 }
 
-/*
- * Convert a frontend data URL such as:
- *
- * data:image/jpeg;base64,/9j/4AAQ...
- *
- * into Gemini inlineData:
- *
- * {
- *   inlineData: {
- *     mimeType: "image/jpeg",
- *     data: "/9j/4AAQ..."
- *   }
- * }
- */
-function dataUrlToInlineData(dataUrl) {
+/* =========================
+   DATA URL PARSER
+========================= */
+
+function parseDataUrl(dataUrl) {
   if (typeof dataUrl !== "string") {
     return null;
   }
 
+  /*
+   * Expected format:
+   *
+   * data:image/jpeg;base64,/9j/4AAQ...
+   *
+   */
+
   const match = dataUrl.match(
-    /^data:([^;,]+);base64,(.+)$/s
+    /^data:([^;,]+)(?:;[^,]*)?;base64,(.+)$/s
   );
 
   if (!match) {
     return null;
   }
 
-  const mimeType = match[1].trim();
-  const base64Data = match[2].trim();
-
-  if (!mimeType.startsWith("image/")) {
-    return null;
-  }
-
-  if (!base64Data) {
-    return null;
-  }
-
   return {
-    inlineData: {
-      mimeType,
-      data: base64Data
-    }
+    mimeType: match[1],
+    data: match[2]
   };
 }
 
-/*
- * Convert frontend messages into Gemini contents.
- *
- * IMPORTANT:
- * message.image is now converted into Gemini inlineData.
- */
+/* =========================
+   MIME TYPE NORMALIZER
+========================= */
+
+function normalizeMimeType(type) {
+  if (typeof type !== "string") {
+    return "image/jpeg";
+  }
+
+  const value = type.toLowerCase().trim();
+
+  const allowed = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/heic",
+    "image/heif"
+  ];
+
+  if (allowed.includes(value)) {
+    return value === "image/jpg"
+      ? "image/jpeg"
+      : value;
+  }
+
+  return "image/jpeg";
+}
+
+/* =========================
+   MESSAGE NORMALIZER
+========================= */
+
 function normalizeMessages(messages) {
   if (!Array.isArray(messages)) {
     return [];
   }
 
-  return messages
-    .filter(Boolean)
-    .map((message) => {
-      const role =
-        message.role === "assistant" ||
-        message.role === "model"
-          ? "model"
-          : "user";
+  const normalized = [];
 
-      const parts = [];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") {
+      continue;
+    }
 
-      /*
-       * TEXT
-       */
-      let text = "";
+    const role =
+      message.role === "assistant" ||
+      message.role === "model"
+        ? "model"
+        : "user";
 
-      if (typeof message.content === "string") {
-        text = message.content;
-      } else if (Array.isArray(message.content)) {
-        text = message.content
-          .map((item) => {
-            if (typeof item === "string") {
-              return item;
-            }
+    const parts = [];
 
-            return item?.text || "";
-          })
-          .filter(Boolean)
-          .join("\n");
-      } else if (
-        message.content !== null &&
-        message.content !== undefined
-      ) {
-        text = JSON.stringify(
-          message.content
-        );
-      }
+    /* =========================
+       TEXT
+    ========================= */
 
-      if (text.trim()) {
+    let text = "";
+
+    if (typeof message.content === "string") {
+      text = message.content;
+    } else if (Array.isArray(message.content)) {
+      text = message.content
+        .map((item) => {
+          if (typeof item === "string") {
+            return item;
+          }
+
+          return item?.text || "";
+        })
+        .filter(Boolean)
+        .join("\n");
+    } else if (
+      message.content !== undefined &&
+      message.content !== null
+    ) {
+      text = String(message.content);
+    }
+
+    if (text.trim()) {
+      parts.push({
+        text: text.trim()
+      });
+    }
+
+    /* =========================
+       IMAGE
+       IMPORTANT FIX
+    ========================= */
+
+    if (
+      role === "user" &&
+      typeof message.image === "string" &&
+      message.image.startsWith("data:")
+    ) {
+      const image = parseDataUrl(message.image);
+
+      if (image?.data) {
         parts.push({
-          text: text.trim()
+          inlineData: {
+            mimeType: normalizeMimeType(
+              image.mimeType
+            ),
+            data: image.data
+          }
         });
       }
+    }
+
+    /* =========================
+       FILE CONTENT
+    ========================= */
+
+    if (
+      role === "user" &&
+      message.file &&
+      typeof message.file === "object"
+    ) {
+      const file = message.file;
 
       /*
-       * IMAGE
+       * Text-readable files are already read
+       * by script.js and stored in file.text.
        */
-      if (message.image) {
-        const imagePart =
-          dataUrlToInlineData(
-            message.image
-          );
 
-        if (imagePart) {
-          parts.push(imagePart);
-        }
+      if (
+        typeof file.text === "string" &&
+        file.text.trim() &&
+        !file.text.startsWith(
+          "PDF file attached:"
+        )
+      ) {
+        parts.push({
+          text:
+            `\n\n[Attached file: ${
+              file.name || "unknown file"
+            }]\n` +
+            file.text
+        });
       }
+    }
 
-      /*
-       * TEXT FILE
-       *
-       * The current frontend sends file.text
-       * for supported text files.
-       */
-      if (message.file) {
-        const fileName =
-          message.file.name || "file";
-
-        const fileType =
-          message.file.type || "";
-
-        const fileText =
-          typeof message.file.text === "string"
-            ? message.file.text
-            : "";
-
-        /*
-         * Only add text when actual text exists.
-         * Avoid sending useless metadata to Gemini.
-         */
-        if (fileText.trim()) {
-          parts.push({
-            text:
-              `\n\n[Attached file: ${fileName}]\n` +
-              `File type: ${fileType || "unknown"}\n` +
-              `File content:\n${fileText}`
-          });
-        } else {
-          /*
-           * For PDFs and unsupported files, tell
-           * the model that the frontend attached
-           * the file but no extracted text is
-           * available yet.
-           */
-          parts.push({
-            text:
-              `\n\n[Attached file: ${fileName}]\n` +
-              `File type: ${fileType || "unknown"}.\n` +
-              `The file is attached, but text extraction ` +
-              `is not available in the current frontend.`
-          });
-        }
-      }
-
-      return {
+    if (parts.length > 0) {
+      normalized.push({
         role,
         parts
-      };
-    })
-    .filter(
-      (message) =>
-        Array.isArray(message.parts) &&
-        message.parts.length > 0
-    );
+      });
+    }
+  }
+
+  return normalized;
 }
 
-/*
- * Gemini response text extraction
- */
+/* =========================
+   EXTRACT GEMINI TEXT
+========================= */
+
 function extractGeminiText(data) {
-  if (!data?.candidates?.length) {
+  if (
+    !data ||
+    !Array.isArray(data.candidates)
+  ) {
     return "";
   }
 
@@ -234,48 +254,144 @@ function extractGeminiText(data) {
     .trim();
 }
 
+/* =========================
+   FIND IMAGE IN LATEST USER
+   MESSAGE
+========================= */
+
+function hasImagePart(message) {
+  if (!message?.parts) {
+    return false;
+  }
+
+  return message.parts.some(
+    (part) =>
+      part?.inlineData?.mimeType?.startsWith(
+        "image/"
+      )
+  );
+}
+
+/* =========================
+   LIMIT OLD IMAGES
+========================= */
+
+function optimizeConversation(messages) {
+  /*
+   * Keep text history.
+   *
+   * Keep image data only from the latest
+   * user message that contains an image.
+   *
+   * This prevents old images from making
+   * the request unnecessarily huge.
+   */
+
+  let latestImageIndex = -1;
+
+  for (
+    let i = messages.length - 1;
+    i >= 0;
+    i--
+  ) {
+    if (hasImagePart(messages[i])) {
+      latestImageIndex = i;
+      break;
+    }
+  }
+
+  if (latestImageIndex === -1) {
+    return messages;
+  }
+
+  return messages.map(
+    (message, index) => {
+      if (
+        index === latestImageIndex
+      ) {
+        return message;
+      }
+
+      if (!hasImagePart(message)) {
+        return message;
+      }
+
+      return {
+        role: message.role,
+        parts: message.parts.filter(
+          (part) =>
+            !part?.inlineData
+        )
+      };
+    }
+  );
+}
+
+/* =========================
+   MAIN WORKER
+========================= */
+
 export default {
   async fetch(request, env) {
-    /*
-     * CORS
-     */
-    if (request.method === "OPTIONS") {
+    const url = new URL(
+      request.url
+    );
+
+    const path =
+      url.pathname;
+
+    /* =========================
+       CORS
+    ========================= */
+
+    if (
+      request.method === "OPTIONS"
+    ) {
       return new Response(null, {
         status: 204,
         headers: CORS_HEADERS
       });
     }
 
-    /*
-     * Health check
-     */
-    if (request.method === "GET") {
+    /* =========================
+       HEALTH CHECK
+    ========================= */
+
+    if (
+      request.method === "GET"
+    ) {
       return json({
         ok: true,
         service: "RAO AI",
         model: GEMINI_MODEL,
         creator: "Suraj Kumar",
         message:
-          "RAO AI Worker is running."
+          "RAO AI Worker is running.",
+        endpoint: path
       });
     }
 
-    /*
-     * Only POST is allowed for chat
-     */
-    if (request.method !== "POST") {
+    /* =========================
+       METHOD CHECK
+    ========================= */
+
+    if (
+      request.method !== "POST"
+    ) {
       return json(
         {
           ok: false,
-          error: "Method not allowed."
+          error:
+            "Method not allowed."
         },
         405
       );
     }
 
-    /*
-     * Check API key
-     */
+    /* =========================
+       API KEY
+    ========================= */
+
     const apiKey =
       env?.GEMINI_API_KEY;
 
@@ -290,13 +406,15 @@ export default {
       );
     }
 
-    /*
-     * Read JSON body
-     */
+    /* =========================
+       READ BODY
+    ========================= */
+
     let body;
 
     try {
-      body = await request.json();
+      body =
+        await request.json();
     } catch (error) {
       return json(
         {
@@ -308,32 +426,40 @@ export default {
       );
     }
 
-    /*
-     * Convert messages
-     */
+    /* =========================
+       NORMALIZE MESSAGES
+    ========================= */
+
     let messages =
       normalizeMessages(
         body?.messages
       );
 
-    /*
-     * Support single-message request too
-     */
+    /* =========================
+       SINGLE MESSAGE SUPPORT
+    ========================= */
+
     if (
       !messages.length &&
-      typeof body?.message === "string"
+      typeof body?.message ===
+        "string"
     ) {
       messages = [
         {
           role: "user",
           parts: [
             {
-              text: body.message
+              text:
+                body.message.trim()
             }
           ]
         }
       ];
     }
+
+    /* =========================
+       NO MESSAGE
+    ========================= */
 
     if (!messages.length) {
       return json(
@@ -346,9 +472,19 @@ export default {
       );
     }
 
-    /*
-     * Gemini request
-     */
+    /* =========================
+       OPTIMIZE IMAGE HISTORY
+    ========================= */
+
+    messages =
+      optimizeConversation(
+        messages
+      );
+
+    /* =========================
+       BUILD GEMINI REQUEST
+    ========================= */
+
     const geminiRequest = {
       systemInstruction: {
         parts: [
@@ -363,16 +499,20 @@ export default {
 
       generationConfig: {
         maxOutputTokens: 4096,
+
         thinkingConfig: {
           thinkingLevel: "medium"
         }
       }
     };
 
-    /*
-     * Optional Google Search
-     */
-    if (body?.webSearch === true) {
+    /* =========================
+       GOOGLE SEARCH
+    ========================= */
+
+    if (
+      body?.webSearch === true
+    ) {
       geminiRequest.tools = [
         {
           google_search: {}
@@ -380,26 +520,32 @@ export default {
       ];
     }
 
-    /*
-     * Call Gemini
-     */
+    /* =========================
+       GEMINI API CALL
+    ========================= */
+
     let response;
 
     try {
-      response = await fetch(
-        `${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json"
-          },
-          body:
-            JSON.stringify(
-              geminiRequest
-            )
-        }
-      );
+      response =
+        await fetch(
+          `${GEMINI_URL}?key=${encodeURIComponent(
+            apiKey
+          )}`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            body:
+              JSON.stringify(
+                geminiRequest
+              )
+          }
+        );
     } catch (error) {
       return json(
         {
@@ -414,9 +560,10 @@ export default {
       );
     }
 
-    /*
-     * Read Gemini response safely
-     */
+    /* =========================
+       READ GEMINI RESPONSE
+    ========================= */
+
     let data;
 
     try {
@@ -435,10 +582,15 @@ export default {
       );
     }
 
-    /*
-     * Gemini API error
-     */
+    /* =========================
+       GEMINI ERROR
+    ========================= */
+
     if (!response.ok) {
+      const details =
+        data?.error ||
+        data;
+
       return json(
         {
           ok: false,
@@ -446,33 +598,40 @@ export default {
             `Gemini API request failed (${response.status}).`,
           status:
             response.status,
-          details:
-            data?.error || data
+          details
         },
         response.status
       );
     }
 
-    /*
-     * Extract reply
-     */
+    /* =========================
+       EXTRACT ANSWER
+    ========================= */
+
     const reply =
-      extractGeminiText(data);
+      extractGeminiText(
+        data
+      );
 
     if (!reply) {
       return json(
         {
           ok: false,
           error:
-            "Gemini returned no text."
+            "Gemini returned no text.",
+          details: {
+            candidates:
+              data?.candidates || []
+          }
         },
         502
       );
     }
 
-    /*
-     * SUCCESS
-     */
+    /* =========================
+       SUCCESS
+    ========================= */
+
     return json({
       ok: true,
       service: "RAO AI",
