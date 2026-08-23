@@ -1,20 +1,64 @@
-const OPENAI_URL = "https://api.openai.com/v1/responses";
-const MODEL = "gpt-5.6";
+const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_URL =
+  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-function corsHeaders() {
-  return {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
-  };
-}
+const CORS_HEADERS = {
+  "Content-Type": "application/json; charset=utf-8",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+};
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: corsHeaders()
+    headers: CORS_HEADERS
   });
+}
+
+function normalizeMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+
+  return messages
+    .filter(Boolean)
+    .map((message) => {
+      const role =
+        message.role === "assistant" || message.role === "model"
+          ? "model"
+          : "user";
+
+      let text = "";
+
+      if (typeof message.content === "string") {
+        text = message.content;
+      } else if (Array.isArray(message.content)) {
+        text = message.content
+          .map((item) => {
+            if (typeof item === "string") return item;
+            return item?.text || "";
+          })
+          .filter(Boolean)
+          .join("\n");
+      } else if (message.content != null) {
+        text = JSON.stringify(message.content);
+      }
+
+      return {
+        role,
+        parts: [{ text }]
+      };
+    })
+    .filter((message) => message.parts[0].text.trim());
+}
+
+function extractGeminiText(data) {
+  if (!data?.candidates) return "";
+
+  return data.candidates
+    .flatMap((candidate) => candidate?.content?.parts || [])
+    .map((part) => part?.text || "")
+    .filter(Boolean)
+    .join("");
 }
 
 export default {
@@ -26,7 +70,7 @@ export default {
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
-        headers: corsHeaders()
+        headers: CORS_HEADERS
       });
     }
 
@@ -43,17 +87,18 @@ export default {
       return json({
         ok: true,
         service: "RAO AI",
-        message: "RAO AI Worker is running"
+        model: GEMINI_MODEL,
+        message: "RAO AI Worker is running."
       });
     }
 
-    // Accept all common chat endpoints
-    const isChatEndpoint =
+    // Supported chat routes
+    const isChatRoute =
       path === "/api/chat" ||
       path === "/chat" ||
       path === "/.netlify/functions/chat";
 
-    if (request.method !== "POST" || !isChatEndpoint) {
+    if (!isChatRoute) {
       return json({
         ok: false,
         error: "Not found",
@@ -61,11 +106,18 @@ export default {
       }, 404);
     }
 
-    // API key check
-    if (!env.OPENAI_API_KEY) {
+    if (request.method !== "POST") {
       return json({
         ok: false,
-        error: "OPENAI_API_KEY is not configured"
+        error: "Method not allowed"
+      }, 405);
+    }
+
+    // Gemini API secret
+    if (!env.GEMINI_API_KEY) {
+      return json({
+        ok: false,
+        error: "GEMINI_API_KEY is not configured in Cloudflare."
       }, 500);
     }
 
@@ -76,102 +128,129 @@ export default {
     } catch {
       return json({
         ok: false,
-        error: "Invalid JSON request"
+        error: "Invalid JSON request."
       }, 400);
     }
 
-    // Support different frontend message formats
-    let messages = body.messages;
+    // Accept existing frontend formats
+    let messages = [];
 
-    if (!Array.isArray(messages)) {
-      if (typeof body.message === "string") {
-        messages = [
-          {
-            role: "user",
-            content: body.message
-          }
-        ];
-      } else if (typeof body.input === "string") {
-        messages = [
-          {
-            role: "user",
-            content: body.input
-          }
-        ];
-      } else {
-        return json({
-          ok: false,
-          error: "No message provided"
-        }, 400);
-      }
+    if (Array.isArray(body?.messages)) {
+      messages = body.messages;
+    } else if (typeof body?.message === "string") {
+      messages = [
+        {
+          role: "user",
+          content: body.message
+        }
+      ];
+    } else if (typeof body?.input === "string") {
+      messages = [
+        {
+          role: "user",
+          content: body.input
+        }
+      ];
     }
 
-    // Convert messages to Responses API input
-    const input = messages.map((message) => ({
-      role: message.role === "assistant" ? "assistant" : "user",
-      content:
-        typeof message.content === "string"
-          ? message.content
-          : JSON.stringify(message.content)
-    }));
+    const contents = normalizeMessages(messages);
+
+    if (!contents.length) {
+      return json({
+        ok: false,
+        error: "No message provided."
+      }, 400);
+    }
+
+    // Gemini request
+    const geminiRequest = {
+      contents,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 4096
+      }
+    };
+
+    // Optional system instruction from frontend
+    if (typeof body?.system === "string" && body.system.trim()) {
+      geminiRequest.systemInstruction = {
+        parts: [
+          {
+            text: body.system.trim()
+          }
+        ]
+      };
+    }
+
+    // Optional Google Search
+    if (body?.webSearch === true) {
+      geminiRequest.tools = [
+        {
+          google_search: {}
+        }
+      ];
+    }
+
+    let response;
 
     try {
-      const openaiResponse = await fetch(OPENAI_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          input
-        })
-      });
-
-      const data = await openaiResponse.json();
-
-      if (!openaiResponse.ok) {
-        return json({
-          ok: false,
-          error: data?.error?.message || "OpenAI API error",
-          details: data?.error || data
-        }, openaiResponse.status);
-      }
-
-      // Extract text safely
-      let reply = "";
-
-      if (typeof data.output_text === "string") {
-        reply = data.output_text;
-      }
-
-      if (!reply && Array.isArray(data.output)) {
-        for (const item of data.output) {
-          if (Array.isArray(item.content)) {
-            for (const content of item.content) {
-              if (
-                content.type === "output_text" &&
-                typeof content.text === "string"
-              ) {
-                reply += content.text;
-              }
-            }
-          }
+      response = await fetch(
+        `${GEMINI_URL}?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(geminiRequest)
         }
-      }
-
-      return json({
-        ok: true,
-        reply: reply || "I couldn't generate a response.",
-        output_text: reply,
-        response: data
-      });
-
+      );
     } catch (error) {
       return json({
         ok: false,
-        error: error?.message || "Worker request failed"
-      }, 500);
+        error: "Could not connect to Gemini API.",
+        details: error?.message || "Network error"
+      }, 502);
     }
+
+    let data;
+
+    try {
+      data = await response.json();
+    } catch {
+      return json({
+        ok: false,
+        error: "Gemini returned an invalid response."
+      }, 502);
+    }
+
+    // Gemini API error
+    if (!response.ok) {
+      return json({
+        ok: false,
+        error:
+          data?.error?.message ||
+          `Gemini API request failed (${response.status}).`,
+        status: response.status,
+        details: data?.error || null
+      }, response.status);
+    }
+
+    const reply = extractGeminiText(data);
+
+    if (!reply) {
+      return json({
+        ok: false,
+        error: "Gemini returned no text response.",
+        details: data
+      }, 502);
+    }
+
+    // Compatible with existing RAO AI frontend
+    return json({
+      ok: true,
+      reply,
+      output_text: reply,
+      response: data
+    });
   }
 };
