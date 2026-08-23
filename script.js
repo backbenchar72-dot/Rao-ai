@@ -17,6 +17,96 @@ let selectedFile = null;
 let isListening = false;
 
 /* =========================
+   TEXT TO SPEECH
+   AI MESSAGE KO TAB BOLEGA
+   JAB USER SPEAKER BUTTON DABAYEGA
+========================= */
+
+let currentSpeech = null;
+
+function speakText(text, button = null) {
+  if (!("speechSynthesis" in window)) {
+    alert("Aapke browser mein voice support available nahi hai.");
+    return;
+  }
+
+  if (!text || !text.trim()) return;
+
+  // Agar pehle se bol raha hai to stop
+  if (speechSynthesis.speaking) {
+    speechSynthesis.cancel();
+
+    if (button) {
+      button.textContent = "🔊";
+    }
+
+    currentSpeech = null;
+    return;
+  }
+
+  const cleanText = text
+    .replace(/[*_`#]/g, "")
+    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+    .trim();
+
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+
+  // Hindi ke liye Hindi voice
+  utterance.lang = "hi-IN";
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+
+  const voices = speechSynthesis.getVoices();
+
+  const hindiVoice =
+    voices.find(v =>
+      v.lang &&
+      v.lang.toLowerCase().startsWith("hi")
+    );
+
+  if (hindiVoice) {
+    utterance.voice = hindiVoice;
+  }
+
+  if (button) {
+    button.textContent = "⏹️";
+  }
+
+  utterance.onend = () => {
+    if (button) {
+      button.textContent = "🔊";
+    }
+
+    currentSpeech = null;
+  };
+
+  utterance.onerror = () => {
+    if (button) {
+      button.textContent = "🔊";
+    }
+
+    currentSpeech = null;
+  };
+
+  currentSpeech = utterance;
+
+  speechSynthesis.cancel();
+
+  // Thoda delay mobile browser compatibility ke liye
+  setTimeout(() => {
+    speechSynthesis.speak(utterance);
+  }, 50);
+}
+
+/* Browser voices load hone do */
+if ("speechSynthesis" in window) {
+  speechSynthesis.onvoiceschanged = () => {
+    speechSynthesis.getVoices();
+  };
+}
+
+/* =========================
    CHAT MESSAGE
 ========================= */
 
@@ -26,18 +116,46 @@ function addMessage(text, who = "assistant") {
 
   row.innerHTML = `
     <div class="avatar">${who === "user" ? "You" : "✦"}</div>
-    <div class="bubble"></div>
+
+    <div class="message-content">
+      <div class="bubble"></div>
+
+      ${
+        who === "assistant"
+          ? `
+            <div class="message-actions">
+              <button
+                type="button"
+                class="speak-btn"
+                aria-label="Speak this message"
+                title="RAO AI ko bolne ke liye dabaye"
+              >
+                🔊
+              </button>
+            </div>
+          `
+          : ""
+      }
+    </div>
   `;
 
   const bubble = row.querySelector(".bubble");
 
-  if (bubble) {
-    bubble.textContent = text;
-  }
+  bubble.textContent = text;
 
-  if (chat) {
-    chat.appendChild(row);
-    chat.scrollTop = chat.scrollHeight;
+  chat.appendChild(row);
+
+  chat.scrollTop = chat.scrollHeight;
+
+  // AI message ke speaker button ko connect karo
+  if (who === "assistant") {
+    const speakBtn = row.querySelector(".speak-btn");
+
+    if (speakBtn) {
+      speakBtn.addEventListener("click", () => {
+        speakText(bubble.textContent, speakBtn);
+      });
+    }
   }
 
   return bubble;
@@ -48,65 +166,10 @@ function addMessage(text, who = "assistant") {
 ========================= */
 
 function clearWelcome() {
-  if (!chat) return;
-
   const welcome = chat.querySelector(".welcome");
 
   if (welcome) {
     welcome.remove();
-  }
-}
-
-/* =========================
-   RAO AI VOICE REPLY
-========================= */
-
-function speakRAO(text) {
-  if (!("speechSynthesis" in window)) {
-    console.log("Speech synthesis not supported.");
-    return;
-  }
-
-  const cleanText = String(text || "")
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/\*\*/g, "")
-    .replace(/#{1,6}\s/g, "")
-    .trim();
-
-  if (!cleanText) return;
-
-  try {
-    window.speechSynthesis.cancel();
-
-    const utterance =
-      new SpeechSynthesisUtterance(cleanText);
-
-    utterance.lang =
-      /[\u0900-\u097F]/.test(cleanText)
-        ? "hi-IN"
-        : "en-IN";
-
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-
-    utterance.onerror = (event) => {
-      console.log("RAO AI voice error:", event);
-    };
-
-    window.speechSynthesis.speak(utterance);
-  } catch (error) {
-    console.log("Voice reply error:", error);
-  }
-}
-
-/* =========================
-   STOP VOICE REPLY
-========================= */
-
-function stopRAOVoice() {
-  if ("speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
   }
 }
 
@@ -123,14 +186,16 @@ if (webSearchBtn) {
       webSearchEnabled
     );
 
-    webSearchBtn.textContent = webSearchEnabled
-      ? "🌐 Web Search: ON"
-      : "🌐 Web Search: OFF";
+    webSearchBtn.textContent =
+      webSearchEnabled
+        ? "🌐 Web Search: ON"
+        : "🌐 Web Search: OFF";
   });
 }
 
 /* =========================
    VOICE INPUT
+   USER MIC SE BOLEGA
 ========================= */
 
 const SpeechRecognition =
@@ -149,6 +214,7 @@ if (micBtn && SpeechRecognition) {
     isListening = true;
 
     micBtn.classList.add("listening");
+
     micBtn.textContent = "🔴";
   };
 
@@ -160,29 +226,33 @@ if (micBtn && SpeechRecognition) {
       input.value = transcript;
 
       input.dispatchEvent(
-        new Event("input", {
-          bubbles: true
-        })
+        new Event("input")
       );
     }
   };
 
   recognition.onerror = (event) => {
-    console.log(
+    console.error(
       "Speech recognition error:",
-      event
+      event?.error
     );
 
     isListening = false;
 
-    micBtn.classList.remove("listening");
+    micBtn.classList.remove(
+      "listening"
+    );
+
     micBtn.textContent = "🎤";
   };
 
   recognition.onend = () => {
     isListening = false;
 
-    micBtn.classList.remove("listening");
+    micBtn.classList.remove(
+      "listening"
+    );
+
     micBtn.textContent = "🎤";
   };
 
@@ -191,15 +261,27 @@ if (micBtn && SpeechRecognition) {
       if (isListening) {
         recognition.stop();
       } else {
-        stopRAOVoice();
         recognition.start();
       }
     } catch (error) {
-      console.log(
+      console.error(
         "Speech recognition start error:",
         error
       );
     }
+  });
+}
+
+/* =========================
+   BROWSER DOES NOT SUPPORT
+   SPEECH RECOGNITION
+========================= */
+
+else if (micBtn) {
+  micBtn.addEventListener("click", () => {
+    alert(
+      "Voice input is not supported in this browser. Chrome browser try karein."
+    );
   });
 }
 
@@ -220,12 +302,16 @@ if (uploadBtn && fileUpload) {
 
       if (!file) return;
 
-      if (file.size > 15 * 1024 * 1024) {
+      if (
+        file.size >
+        15 * 1024 * 1024
+      ) {
         alert(
           "File 15 MB se chhoti rakho."
         );
 
         resetAttachment();
+
         return;
       }
 
@@ -261,9 +347,16 @@ if (uploadBtn && fileUpload) {
             await file.text();
 
           selectedFile.text =
-            text.slice(0, 120000);
-        } else if (
-          file.type.startsWith("image/")
+            text.slice(
+              0,
+              120000
+            );
+        }
+
+        else if (
+          file.type.startsWith(
+            "image/"
+          )
         ) {
           selectedImage =
             await fileToDataURL(file);
@@ -273,6 +366,7 @@ if (uploadBtn && fileUpload) {
           `📎 ${file.name} attached`,
           "assistant"
         );
+
       } catch (error) {
         console.error(
           "File read error:",
@@ -288,6 +382,10 @@ if (uploadBtn && fileUpload) {
     }
   );
 }
+
+/* =========================
+   FILE TO DATA URL
+========================= */
 
 function fileToDataURL(file) {
   return new Promise(
@@ -305,322 +403,4 @@ function fileToDataURL(file) {
   );
 }
 
-function resetAttachment() {
-  selectedImage = null;
-  selectedFile = null;
-
-  if (fileUpload) {
-    fileUpload.value = "";
-  }
-}
-
-if (removeFile) {
-  removeFile.addEventListener(
-    "click",
-    resetAttachment
-  );
-}
-
 /* =========================
-   SEND MESSAGE
-========================= */
-
-if (form) {
-  form.addEventListener(
-    "submit",
-    async (event) => {
-      event.preventDefault();
-
-      const text =
-        input?.value?.trim() || "";
-
-      if (
-        !text &&
-        !selectedImage &&
-        !selectedFile
-      ) {
-        return;
-      }
-
-      clearWelcome();
-
-      stopRAOVoice();
-
-      const displayText =
-        text ||
-        (selectedImage
-          ? "Please analyze this image."
-          : "Please read this file.");
-
-      addMessage(
-        displayText,
-        "user"
-      );
-
-      if (input) {
-        input.value = "";
-        input.style.height = "auto";
-      }
-
-      const loading =
-        addMessage(
-          webSearchEnabled
-            ? "Searching the web and thinking..."
-            : "Thinking...",
-          "assistant"
-        );
-
-      if (input) {
-        input.disabled = true;
-      }
-
-      if (micBtn) {
-        micBtn.disabled = true;
-      }
-
-      if (uploadBtn) {
-        uploadBtn.disabled = true;
-      }
-
-      try {
-        const currentMessage = {
-          role: "user",
-          content: displayText
-        };
-
-        /*
-         * Keep existing frontend attachment
-         * structure so the current setup
-         * does not break.
-         */
-
-        if (selectedImage) {
-          currentMessage.image =
-            selectedImage;
-        }
-
-        if (selectedFile) {
-          currentMessage.file =
-            selectedFile;
-        }
-
-        messages.push(
-          currentMessage
-        );
-
-        /*
-         * IMPORTANT:
-         * Keep the existing Cloudflare
-         * Worker endpoint.
-         */
-
-        const response =
-          await fetch("/chat", {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json"
-            },
-
-            body: JSON.stringify({
-              messages: messages,
-
-              /*
-               * Send web search state
-               * to the Worker.
-               */
-              webSearch:
-                webSearchEnabled
-            })
-          });
-
-        /*
-         * Read raw response first.
-         * This prevents JSON parsing
-         * crashes on non-JSON errors.
-         */
-
-        const rawText =
-          await response.text();
-
-        let data = null;
-
-        if (rawText.trim()) {
-          try {
-            data =
-              JSON.parse(rawText);
-          } catch (jsonError) {
-            console.error(
-              "Invalid JSON from Worker:",
-              rawText
-            );
-
-            throw new Error(
-              "Server ne invalid response bheja."
-            );
-          }
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              `Server error (${response.status})`
-          );
-        }
-
-        /*
-         * Support all response names
-         * currently used by RAO AI.
-         */
-
-        const reply =
-          data?.reply ||
-          data?.output_text ||
-          data?.message ||
-          "";
-
-        if (
-          typeof reply !== "string" ||
-          !reply.trim()
-        ) {
-          throw new Error(
-            "RAO AI se empty response mila."
-          );
-        }
-
-        /*
-         * Show response on screen.
-         */
-
-        if (loading) {
-          loading.textContent =
-            reply;
-        }
-
-        /*
-         * Save assistant response
-         * for conversation history.
-         */
-
-        messages.push({
-          role: "assistant",
-          content: reply
-        });
-
-        /*
-         * 🔊 IMPORTANT:
-         * Make RAO AI speak its response.
-         */
-
-        speakRAO(reply);
-      } catch (error) {
-        console.error(
-          "RAO AI ERROR:",
-          error
-        );
-
-        if (loading) {
-          loading.textContent =
-            "Error: " +
-            (
-              error?.message ||
-              "RAO AI se response nahi mila."
-            );
-        }
-      } finally {
-        resetAttachment();
-
-        if (input) {
-          input.disabled = false;
-        }
-
-        if (micBtn) {
-          micBtn.disabled = false;
-        }
-
-        if (uploadBtn) {
-          uploadBtn.disabled = false;
-        }
-
-        input?.focus();
-      }
-    }
-  );
-}
-
-/* =========================
-   ENTER TO SEND
-========================= */
-
-if (input) {
-  input.addEventListener(
-    "keydown",
-    (event) => {
-      if (
-        event.key === "Enter" &&
-        !event.shiftKey
-      ) {
-        event.preventDefault();
-
-        form?.requestSubmit();
-      }
-    }
-  );
-
-  input.addEventListener(
-    "input",
-    () => {
-      input.style.height =
-        "auto";
-
-      input.style.height =
-        Math.min(
-          input.scrollHeight,
-          140
-        ) + "px";
-    }
-  );
-}
-
-/* =========================
-   NEW CHAT
-========================= */
-
-if (newChatBtn) {
-  newChatBtn.addEventListener(
-    "click",
-    () => {
-      stopRAOVoice();
-
-      messages = [];
-
-      selectedImage = null;
-      selectedFile = null;
-
-      if (fileUpload) {
-        fileUpload.value = "";
-      }
-
-      if (chat) {
-        chat.innerHTML = `
-          <div class="welcome">
-            <div class="logo">✦</div>
-            <h2>Welcome to RAO AI</h2>
-            <p>
-              Ask anything, upload a file or image,
-              or use voice input.
-            </p>
-          </div>
-        `;
-      }
-
-      if (input) {
-        input.value = "";
-        input.style.height =
-          "auto";
-        input.focus();
-      }
-    }
-  );
-}
