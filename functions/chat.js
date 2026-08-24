@@ -8,7 +8,7 @@ function jsonResponse(status, data) {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Allow-Methods": "POST, OPTIONS"
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
     }
   });
 }
@@ -20,7 +20,7 @@ function makeInput(messages) {
     if (message?.image) {
       content.push({
         type: "input_image",
-        image_url: message.image
+        image_url: String(message.image)
       });
     }
 
@@ -28,7 +28,7 @@ function makeInput(messages) {
       content.push({
         type: "input_text",
         text:
-          `FILE CONTENT (${message.file.name || "uploaded file"}):\n\n` +
+          `FILE CONTENT (${message.filename || "uploaded file"}):\n\n` +
           String(message.file.text)
       });
     }
@@ -84,17 +84,160 @@ function extractReply(data) {
   return parts.join("\n").trim();
 }
 
+function sseResponse(stream) {
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+    }
+  });
+}
+
+function createSSEStream(openaiResponse) {
+  const reader = openaiResponse.body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+
+          if (done) break;
+
+          buffer += decoder.decode(value, {
+            stream: true
+          });
+
+          const events = buffer.split("\n\n");
+          buffer = events.pop() || "";
+
+          for (const event of events) {
+            const lines = event.split("\n");
+
+            let eventName = "";
+            let dataText = "";
+
+            for (const line of lines) {
+              if (line.startsWith("event:")) {
+                eventName = line.slice(6).trim();
+              }
+
+              if (line.startsWith("data:")) {
+                dataText += line.slice(5).trim();
+              }
+            }
+
+            if (!dataText) continue;
+
+            if (dataText === "[DONE]") {
+              controller.enqueue(
+                encoder.encode("data: [DONE]\n\n")
+              );
+              continue;
+            }
+
+            let data;
+
+            try {
+              data = JSON.parse(dataText);
+            } catch {
+              continue;
+            }
+
+            // Live text token
+            if (eventName === "response.output_text.delta") {
+              const delta =
+                typeof data.delta === "string"
+                  ? data.delta
+                  : "";
+
+              if (delta) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      type: "delta",
+                      text: delta
+                    })}\n\n`
+                  )
+                );
+              }
+            }
+
+            // Completed response
+            if (eventName === "response.completed") {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: "done"
+                  })}\n\n`
+                )
+              );
+            }
+
+            // OpenAI error event
+            if (eventName === "error") {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: "error",
+                    error:
+                      data?.error?.message ||
+                      "OpenAI streaming error."
+                  })}\n\n`
+                )
+              );
+            }
+          }
+        }
+
+        controller.enqueue(
+          encoder.encode("data: [DONE]\n\n")
+        );
+
+        controller.close();
+      } catch (error) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              type: "error",
+              error:
+                error?.message ||
+                "Streaming connection failed."
+            })}\n\n`
+          )
+        );
+
+        controller.close();
+      }
+    },
+
+    cancel() {
+      reader.cancel().catch(() => {});
+    }
+  });
+}
+
 export default {
   async fetch(request, env) {
-
     // CORS
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-          "Access-Control-Allow-Methods": "POST, OPTIONS"
+          "Access-Control-Allow-Headers":
+            "Content-Type, Authorization",
+          "Access-Control-Allow-Methods":
+            "GET, POST, OPTIONS"
         }
       });
     }
@@ -111,12 +254,11 @@ export default {
     // Only POST for chat
     if (request.method !== "POST") {
       return jsonResponse(405, {
-        error: "Method not allowed"
+        error: "Method not allowed."
       });
     }
 
     try {
-
       // API KEY CHECK
       if (!env.OPENAI_API_KEY) {
         return jsonResponse(500, {
@@ -129,7 +271,7 @@ export default {
 
       try {
         body = await request.json();
-      } catch (error) {
+      } catch {
         return jsonResponse(400, {
           error: "Invalid JSON request."
         });
@@ -145,28 +287,84 @@ export default {
         });
       }
 
+      /*
+       * STREAMING
+       *
+       * Existing frontend:
+       *   stream = false / omitted
+       *   => normal JSON reply
+       *
+       * Live-chat frontend:
+       *   stream = true
+       *   => token-by-token SSE response
+       */
+      const stream = body?.stream === true;
+
       // CALL OPENAI
       const response = await fetch(OPENAI_URL, {
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${env.OPENAI_API_KEY}`
+          "Authorization":
+            `Bearer ${env.OPENAI_API_KEY}`
         },
+
         body: JSON.stringify({
           model: MODEL,
-          input: makeInput(messages)
+          input: makeInput(messages),
+          store: false,
+          stream
         })
       });
 
+      // STREAMING RESPONSE
+      if (stream) {
+        if (!response.ok) {
+          const rawError = await response.text();
+
+          let errorData = {};
+
+          try {
+            errorData = rawError
+              ? JSON.parse(rawError)
+              : {};
+          } catch {
+            // Keep empty error object
+          }
+
+          return jsonResponse(response.status, {
+            error:
+              errorData?.error?.message ||
+              "OpenAI API request failed."
+          });
+        }
+
+        if (!response.body) {
+          return jsonResponse(502, {
+            error:
+              "OpenAI returned an empty streaming response."
+          });
+        }
+
+        return sseResponse(
+          createSSEStream(response)
+        );
+      }
+
+      // NORMAL NON-STREAMING RESPONSE
       const rawText = await response.text();
 
       let data;
 
       try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch (error) {
+        data = rawText
+          ? JSON.parse(rawText)
+          : {};
+      } catch {
         return jsonResponse(502, {
-          error: "OpenAI returned an invalid response.",
+          error:
+            "OpenAI returned an invalid response.",
           details: rawText.slice(0, 500)
         });
       }
@@ -185,19 +383,22 @@ export default {
 
       if (!reply) {
         return jsonResponse(502, {
-          error: "OpenAI returned no text response."
+          error:
+            "OpenAI returned no text response."
         });
       }
 
       // SUCCESS
       return jsonResponse(200, {
-        reply: reply,
+        reply,
         output_text: reply
       });
 
     } catch (error) {
       return jsonResponse(500, {
-        error: error?.message || "Internal server error."
+        error:
+          error?.message ||
+          "Internal server error."
       });
     }
   }
