@@ -1,31 +1,17 @@
 const OPENAI_MODEL = "gpt-5.4-mini";
-
-const OPENAI_URL =
-  "https://api.openai.com/v1/responses";
+const OPENAI_URL = "https://api.openai.com/v1/responses";
 
 const CORS_HEADERS = {
-  "Content-Type":
-    "application/json; charset=utf-8",
-
+  "Content-Type": "application/json; charset=utf-8",
   "Access-Control-Allow-Origin": "*",
-
-  "Access-Control-Allow-Headers":
-    "Content-Type, Authorization",
-
-  "Access-Control-Allow-Methods":
-    "GET, POST, OPTIONS"
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
-
-
-/* =========================
-   DEFAULT SYSTEM INSTRUCTION
-========================= */
 
 const DEFAULT_SYSTEM_INSTRUCTION = `
 You are RAO AI, a helpful AI assistant.
 
 IMPORTANT IDENTITY RULES:
-
 - Your name is RAO AI.
 - The creator/developer of RAO AI is Suraj Kumar.
 - If the user asks who created you, who your creator is, or similar questions, answer:
@@ -35,13 +21,11 @@ IMPORTANT IDENTITY RULES:
 - Do not claim that RAO AI was created by Google, OpenAI, Microsoft, or another company.
 
 LANGUAGE RULES:
-
 - Reply in the same language as the user whenever possible.
 - If the user writes Hindi or Hinglish, reply in Hindi/Hinglish.
 - If the user writes English, reply in English.
 
 BEHAVIOR:
-
 - Be helpful, accurate, friendly and concise.
 - Do not invent facts.
 - If you are unsure, say so.
@@ -50,33 +34,41 @@ BEHAVIOR:
 - Never reveal API keys, secrets, or environment variables.
 `;
 
-
-/* =========================
-   JSON RESPONSE
-========================= */
-
 function json(data, status = 200) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: CORS_HEADERS
-    }
-  );
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: CORS_HEADERS
+  });
 }
 
+function parseDataUrl(dataUrl) {
+  if (
+    typeof dataUrl !== "string" ||
+    !dataUrl.startsWith("data:")
+  ) {
+    return null;
+  }
 
-/* =========================
-   MIME TYPE NORMALIZER
-========================= */
+  const match = dataUrl.match(
+    /^data:([^;,]+);base64,(.+)$/s
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    mimeType: match[1],
+    data: match[2]
+  };
+}
 
 function normalizeMimeType(type) {
   if (typeof type !== "string") {
     return "image/jpeg";
   }
 
-  const value =
-    type.toLowerCase().trim();
+  const value = type.toLowerCase().trim();
 
   const allowed = [
     "image/jpeg",
@@ -97,45 +89,6 @@ function normalizeMimeType(type) {
   return "image/jpeg";
 }
 
-
-/* =========================
-   DATA URL PARSER
-========================= */
-
-function parseDataUrl(dataUrl) {
-  if (
-    typeof dataUrl !== "string" ||
-    !dataUrl.startsWith("data:")
-  ) {
-    return null;
-  }
-
-  /*
-   * Expected format:
-   *
-   * data:image/jpeg;base64,/9j/4AAQ...
-   */
-
-  const match =
-    dataUrl.match(
-      /^data:([^;]+);base64,(.+)$/s
-    );
-
-  if (!match) {
-    return null;
-  }
-
-  return {
-    mimeType: match[1],
-    data: match[2]
-  };
-}
-
-
-/* =========================
-   MESSAGE NORMALIZER
-========================= */
-
 function normalizeMessages(messages) {
   if (!Array.isArray(messages)) {
     return [];
@@ -155,37 +108,30 @@ function normalizeMessages(messages) {
       message.role === "assistant" ||
       message.role === "model"
         ? "assistant"
-        : "user";
+        : message.role === "system"
+          ? "system"
+          : "user";
 
     const content = [];
-
-    /* =========================
-       TEXT
-    ========================= */
 
     let text = "";
 
     if (
-      typeof message.content ===
-      "string"
+      typeof message.content === "string"
     ) {
       text = message.content;
-
     } else if (
       Array.isArray(message.content)
     ) {
       text = message.content
         .map((item) => {
-          if (
-            typeof item === "string"
-          ) {
+          if (typeof item === "string") {
             return item;
           }
 
           if (
             item &&
-            typeof item.text ===
-              "string"
+            typeof item.text === "string"
           ) {
             return item.text;
           }
@@ -194,14 +140,11 @@ function normalizeMessages(messages) {
         })
         .filter(Boolean)
         .join("\n");
-
     } else if (
       message.content !== undefined &&
       message.content !== null
     ) {
-      text = String(
-        message.content
-      );
+      text = String(message.content);
     }
 
     if (text.trim()) {
@@ -211,130 +154,62 @@ function normalizeMessages(messages) {
       });
     }
 
-
-    /* =========================
-       IMAGE
-    ========================= */
-
     if (
       role === "user" &&
-      typeof message.image ===
-        "string" &&
-      message.image.trim()
+      typeof message.image === "string"
     ) {
       const image =
-        parseDataUrl(
-          message.image
-        );
+        parseDataUrl(message.image);
 
-      if (image?.data) {
+      if (image) {
         content.push({
           type: "input_image",
           image_url:
             `data:${normalizeMimeType(
               image.mimeType
-            )};base64,${image.data}`
+            )};base64,${image.data}`,
+          detail: "auto"
         });
       }
     }
 
-
-    /* =========================
-       FILE CONTENT
-    ========================= */
-
     if (
       role === "user" &&
       message.file &&
-      typeof message.file ===
-        "object"
+      typeof message.file === "object"
     ) {
-      const file =
-        message.file;
+      const file = message.file;
 
       if (
-        typeof file.text ===
-          "string" &&
+        typeof file.text === "string" &&
         file.text.trim()
       ) {
         content.push({
           type: "input_text",
           text:
-            `\n\nAttached file: ${
-              message.filename ||
-              file.name ||
-              "unknown file"
-            }\n\n` +
-            file.text
+            `\n[Attached file: ${
+              file.name || "unknown file"
+            }]\n${file.text}`
         });
       }
     }
 
-
-    /* =========================
-       FALLBACK
-    ========================= */
-
-    if (!content.length) {
-      content.push({
-        type: "input_text",
-        text:
-          "Please respond to the user."
+    if (content.length) {
+      normalized.push({
+        role,
+        content
       });
     }
-
-    normalized.push({
-      role,
-      content
-    });
   }
 
   return normalized;
 }
 
-
-/* =========================
-   FIND IMAGE IN MESSAGE
-========================= */
-
-function hasImage(message) {
-  if (!message) {
-    return false;
-  }
-
+function optimizeConversation(messages) {
   if (
-    typeof message.image ===
-      "string" &&
-    message.image.startsWith(
-      "data:image/"
-    )
+    !Array.isArray(messages) ||
+    messages.length === 0
   ) {
-    return true;
-  }
-
-  return false;
-}
-
-
-/* =========================
-   LIMIT OLD IMAGES
-========================= */
-
-function optimizeConversation(
-  messages
-) {
-  /*
-   * Keep complete text history.
-   *
-   * Keep image data only from the
-   * latest user message that contains
-   * an image.
-   *
-   * This prevents old images from
-   * unnecessarily increasing API usage.
-   */
-
-  if (!Array.isArray(messages)) {
     return [];
   }
 
@@ -345,61 +220,64 @@ function optimizeConversation(
     i >= 0;
     i--
   ) {
+    const content =
+      messages[i]?.content;
+
     if (
-      hasImage(messages[i])
+      Array.isArray(content) &&
+      content.some(
+        (part) =>
+          part?.type === "input_image"
+      )
     ) {
       latestImageIndex = i;
       break;
     }
   }
 
-  if (
-    latestImageIndex === -1
-  ) {
+  if (latestImageIndex === -1) {
     return messages;
   }
 
-  return messages.map(
-    (message, index) => {
+  return messages
+    .map((message, index) => {
       if (
         index === latestImageIndex
       ) {
         return message;
       }
 
-      if (!hasImage(message)) {
+      if (
+        !Array.isArray(
+          message?.content
+        )
+      ) {
         return message;
       }
 
-      /*
-       * Remove old image but keep
-       * its text content.
-       */
+      const withoutOldImages =
+        message.content.filter(
+          (part) =>
+            part?.type !== "input_image"
+        );
 
-      const copy = {
-        ...message
+      if (
+        withoutOldImages.length === 0
+      ) {
+        return null;
+      }
+
+      return {
+        role: message.role,
+        content: withoutOldImages
       };
-
-      delete copy.image;
-
-      return copy;
-    }
-  );
+    })
+    .filter(Boolean);
 }
 
-
-/* =========================
-   EXTRACT OPENAI TEXT
-========================= */
-
 function extractOpenAIText(data) {
-  if (!data) {
-    return "";
-  }
-
   if (
-    typeof data.output_text ===
-      "string" &&
+    typeof data?.output_text === "string" &&
     data.output_text.trim()
   ) {
     return data.output_text.trim();
@@ -407,10 +285,347 @@ function extractOpenAIText(data) {
 
   const parts = [];
 
-  if (Array.isArray(data.output)) {
+  for (
+    const item of data?.output || []
+  ) {
     for (
-      const item of data.output
+      const content of item?.content || []
     ) {
       if (
-        !Array.isArray(
-         
+        content?.type === "output_text" &&
+        typeof content.text === "string"
+      ) {
+        parts.push(content.text);
+      }
+    }
+  }
+
+  return parts
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(
+      request.url
+    );
+
+    const path = url.pathname;
+
+    /* =========================
+       CORS
+    ========================= */
+
+    if (
+      request.method === "OPTIONS"
+    ) {
+      return new Response(null, {
+        status: 204,
+        headers: CORS_HEADERS
+      });
+    }
+
+    /* =========================
+       HEALTH CHECK
+    ========================= */
+
+    if (
+      request.method === "GET"
+    ) {
+      return json({
+        ok: true,
+        service: "RAO AI",
+        model: OPENAI_MODEL,
+        creator: "Suraj Kumar",
+        message:
+          "RAO AI Worker is running.",
+        endpoint: path
+      });
+    }
+
+    /* =========================
+       METHOD CHECK
+    ========================= */
+
+    if (
+      request.method !== "POST"
+    ) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Method not allowed."
+        },
+        405
+      );
+    }
+
+    /* =========================
+       OPENAI API KEY
+    ========================= */
+
+    const apiKey =
+      env?.OPENAI_API_KEY;
+
+    if (!apiKey) {
+      return json(
+        {
+          ok: false,
+          error:
+            "OPENAI_API_KEY is not configured in Cloudflare Worker secrets."
+        },
+        500
+      );
+    }
+
+    /* =========================
+       READ BODY
+    ========================= */
+
+    let body;
+
+    try {
+      body =
+        await request.json();
+    } catch (error) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Invalid JSON request."
+        },
+        400
+      );
+    }
+
+    /* =========================
+       NORMALIZE MESSAGES
+    ========================= */
+
+    let messages =
+      normalizeMessages(
+        body?.messages
+      );
+
+    /* =========================
+       SINGLE MESSAGE SUPPORT
+    ========================= */
+
+    if (
+      messages.length === 0 &&
+      typeof body?.message ===
+        "string" &&
+      body.message.trim()
+    ) {
+      messages = [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text:
+                body.message.trim()
+            }
+          ]
+        }
+      ];
+
+      if (
+        typeof body?.image ===
+        "string"
+      ) {
+        const image =
+          parseDataUrl(
+            body.image
+          );
+
+        if (image) {
+          messages[0].content.push({
+            type: "input_image",
+            image_url:
+              `data:${normalizeMimeType(
+                image.mimeType
+              )};base64,${image.data}`,
+            detail: "auto"
+          });
+        }
+      }
+    }
+
+    /* =========================
+       NO MESSAGE
+    ========================= */
+
+    if (messages.length === 0) {
+      return json(
+        {
+          ok: false,
+          error:
+            "No message provided."
+        },
+        400
+      );
+    }
+
+    /* =========================
+       OPTIMIZE IMAGE HISTORY
+    ========================= */
+
+    messages =
+      optimizeConversation(
+        messages
+      );
+
+    /* =========================
+       BUILD OPENAI REQUEST
+    ========================= */
+
+    const requestBody = {
+      model: OPENAI_MODEL,
+
+      instructions:
+        DEFAULT_SYSTEM_INSTRUCTION,
+
+      input: messages,
+
+      max_output_tokens: 4096
+    };
+
+    /* =========================
+       WEB SEARCH
+    ========================= */
+
+    if (
+      body?.webSearch === true
+    ) {
+      requestBody.tools = [
+        {
+          type: "web_search"
+        }
+      ];
+    }
+
+    /* =========================
+       OPENAI API CALL
+    ========================= */
+
+    let response;
+
+    try {
+      response =
+        await fetch(
+          OPENAI_URL,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              "Authorization":
+                `Bearer ${apiKey}`
+            },
+
+            body:
+              JSON.stringify(
+                requestBody
+              )
+          }
+        );
+    } catch (error) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Could not connect to OpenAI API.",
+          details:
+            error?.message ||
+            "Network error"
+        },
+        502
+      );
+    }
+
+    /* =========================
+       READ OPENAI RESPONSE
+    ========================= */
+
+    let data;
+
+    try {
+      data =
+        await response.json();
+    } catch (error) {
+      return json(
+        {
+          ok: false,
+          error:
+            "OpenAI returned an invalid response.",
+          status:
+            response.status
+        },
+        502
+      );
+    }
+
+    /* =========================
+       OPENAI ERROR
+    ========================= */
+
+    if (!response.ok) {
+      const details =
+        data?.error ||
+        data;
+
+      return json(
+        {
+          ok: false,
+          error:
+            `OpenAI API request failed (${response.status}).`,
+          status:
+            response.status,
+          details
+        },
+        response.status
+      );
+    }
+
+    /* =========================
+       EXTRACT ANSWER
+    ========================= */
+
+    const reply =
+      extractOpenAIText(
+        data
+      );
+
+    if (!reply) {
+      return json(
+        {
+          ok: false,
+          error:
+            "OpenAI returned no text.",
+          details: {
+            output:
+              data?.output || []
+          }
+        },
+        502
+      );
+    }
+
+    /* =========================
+       SUCCESS
+    ========================= */
+
+    return json({
+      ok: true,
+      service: "RAO AI",
+      model: OPENAI_MODEL,
+      creator: "Suraj Kumar",
+      message: reply
+    });
+  }
+};
