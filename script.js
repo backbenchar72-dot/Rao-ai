@@ -1,14 +1,4 @@
-"use strict";
-
-/* =========================================================
-   RAO AI - FRONTEND SCRIPT
-   Cloudflare Worker + OpenAI Responses API
-   Live Streaming Enabled
-========================================================= */
-
-/* =========================
-   ELEMENTS
-========================= */
+# script.js — RAO AI Live Streaming
 
 const chat = document.getElementById("chat");
 const form = document.getElementById("composer");
@@ -22,12 +12,6 @@ const micBtn = document.getElementById("micBtn");
 const webSearchBtn = document.getElementById("webSearchBtn");
 const newChatBtn = document.getElementById("newChat");
 
-const sendBtn = document.getElementById("send");
-
-/* =========================
-   STATE
-========================= */
-
 let messages = [];
 let webSearchEnabled = false;
 
@@ -36,6 +20,7 @@ let selectedFile = null;
 
 let isListening = false;
 let isSending = false;
+
 
 /* =========================================================
    TEXT TO SPEECH
@@ -47,9 +32,7 @@ function speakText(text, button = null) {
     return;
   }
 
-  if (!text || !String(text).trim()) {
-    return;
-  }
+  if (!text || !text.trim()) return;
 
   if (speechSynthesis.speaking) {
     speechSynthesis.cancel();
@@ -70,9 +53,6 @@ function speakText(text, button = null) {
 
   const utterance = new SpeechSynthesisUtterance(cleanText);
 
-  /*
-   * Hindi/Hinglish voice
-   */
   utterance.lang = "hi-IN";
   utterance.rate = 1;
   utterance.pitch = 1;
@@ -80,12 +60,11 @@ function speakText(text, button = null) {
 
   const voices = speechSynthesis.getVoices();
 
-  const hindiVoice = voices.find((voice) => {
-    return (
+  const hindiVoice = voices.find(
+    (voice) =>
       voice.lang &&
       voice.lang.toLowerCase().startsWith("hi")
-    );
-  });
+  );
 
   if (hindiVoice) {
     utterance.voice = hindiVoice;
@@ -120,16 +99,12 @@ if ("speechSynthesis" in window) {
   };
 }
 
+
 /* =========================================================
    ADD MESSAGE
 ========================================================= */
 
-function addMessage(text, who = "assistant") {
-  if (!chat) {
-    console.error("RAO AI: #chat element not found.");
-    return null;
-  }
-
+function addMessage(text = "", who = "assistant") {
   const row = document.createElement("div");
 
   row.className = `msg ${who}`;
@@ -163,9 +138,7 @@ function addMessage(text, who = "assistant") {
 
   const bubble = row.querySelector(".bubble");
 
-  if (bubble) {
-    bubble.textContent = text || "";
-  }
+  bubble.textContent = text || "";
 
   chat.appendChild(row);
 
@@ -174,39 +147,46 @@ function addMessage(text, who = "assistant") {
   if (who === "assistant") {
     const speakBtn = row.querySelector(".speak-btn");
 
-    if (speakBtn && bubble) {
+    if (speakBtn) {
       speakBtn.addEventListener("click", () => {
-        speakText(bubble.textContent, speakBtn);
+        speakText(
+          bubble.textContent,
+          speakBtn
+        );
       });
     }
   }
 
-  return bubble;
+  return {
+    row,
+    bubble
+  };
 }
+
 
 /* =========================================================
    CLEAR WELCOME
 ========================================================= */
 
 function clearWelcome() {
-  if (!chat) return;
-
-  const welcome = chat.querySelector(".welcome");
+  const welcome = chat?.querySelector(".welcome");
 
   if (welcome) {
     welcome.remove();
   }
 }
 
+
 /* =========================================================
    WEB SEARCH
 ========================================================= */
 
 if (webSearchBtn) {
-  webSearchBtn.addEventListener("click", (event) => {
-    event.preventDefault();
+  webSearchBtn.addEventListener("click", () => {
+    if (isSending) return;
 
-    webSearchEnabled = !webSearchEnabled;
+    webSearchEnabled =
+      !webSearchEnabled;
 
     webSearchBtn.classList.toggle(
       "active",
@@ -218,15 +198,20 @@ if (webSearchBtn) {
         ? "🌐 Web Search: ON"
         : "🌐 Web Search: OFF";
 
-    const note = document.getElementById("webSearchNote");
+    const note =
+      document.getElementById(
+        "webSearchNote"
+      );
 
     if (note) {
-      note.textContent = webSearchEnabled
-        ? "Live web information is ON"
-        : "Current web information is off";
+      note.textContent =
+        webSearchEnabled
+          ? "Live web information is ON"
+          : "Current web information is off";
     }
   });
 }
+
 
 /* =========================================================
    VOICE INPUT
@@ -237,107 +222,148 @@ const SpeechRecognition =
   window.webkitSpeechRecognition;
 
 if (micBtn && SpeechRecognition) {
-  const recognition = new SpeechRecognition();
+  const recognition =
+    new SpeechRecognition();
 
   recognition.lang = "hi-IN";
+
   recognition.continuous = false;
+
   recognition.interimResults = false;
+
   recognition.maxAlternatives = 1;
+
 
   recognition.onstart = () => {
     isListening = true;
 
-    micBtn.classList.add("listening");
+    micBtn.classList.add(
+      "listening"
+    );
+
     micBtn.textContent = "🔴";
   };
 
+
   recognition.onresult = (event) => {
     const transcript =
-      event.results?.[0]?.[0]?.transcript || "";
+      event.results?.[0]?.[0]
+        ?.transcript || "";
 
     if (input && transcript) {
       input.value = transcript;
 
       input.dispatchEvent(
-        new Event("input", {
-          bubbles: true
-        })
+        new Event("input")
       );
     }
   };
 
+
   recognition.onerror = (event) => {
     console.error(
-      "RAO AI Speech Recognition Error:",
+      "Speech recognition error:",
       event?.error
     );
 
     isListening = false;
 
-    micBtn.classList.remove("listening");
+    micBtn.classList.remove(
+      "listening"
+    );
+
     micBtn.textContent = "🎤";
   };
+
 
   recognition.onend = () => {
     isListening = false;
 
-    micBtn.classList.remove("listening");
+    micBtn.classList.remove(
+      "listening"
+    );
+
     micBtn.textContent = "🎤";
   };
 
-  micBtn.addEventListener("click", (event) => {
-    event.preventDefault();
 
-    try {
-      if (isListening) {
-        recognition.stop();
-      } else {
-        recognition.start();
+  micBtn.addEventListener(
+    "click",
+    () => {
+      if (isSending) return;
+
+      try {
+        if (isListening) {
+          recognition.stop();
+        } else {
+          recognition.start();
+        }
+      } catch (error) {
+        console.error(
+          "Speech recognition start error:",
+          error
+        );
       }
-    } catch (error) {
-      console.error(
-        "Speech recognition start error:",
-        error
+    }
+  );
+
+} else if (micBtn) {
+
+  micBtn.addEventListener(
+    "click",
+    () => {
+      alert(
+        "Voice input is not supported in this browser. Chrome browser try karein."
       );
     }
-  });
-} else if (micBtn) {
-  micBtn.addEventListener("click", (event) => {
-    event.preventDefault();
-
-    alert(
-      "Voice input is not supported in this browser. Chrome browser try karein."
-    );
-  });
+  );
 }
+
 
 /* =========================================================
    FILE UPLOAD
 ========================================================= */
 
 if (uploadBtn && fileUpload) {
-  uploadBtn.addEventListener("click", (event) => {
-    event.preventDefault();
 
-    fileUpload.click();
-  });
+  uploadBtn.addEventListener(
+    "click",
+    () => {
+      if (isSending) return;
+
+      fileUpload.click();
+    }
+  );
+
 
   fileUpload.addEventListener(
     "change",
     async () => {
-      const file = fileUpload.files?.[0];
+
+      if (isSending) return;
+
+      const file =
+        fileUpload.files?.[0];
 
       if (!file) return;
 
-      if (file.size > 15 * 1024 * 1024) {
-        alert("File 15 MB se chhoti rakho.");
+
+      if (
+        file.size >
+        15 * 1024 * 1024
+      ) {
+        alert(
+          "File 15 MB se chhoti rakho."
+        );
 
         resetAttachment();
 
         return;
       }
 
+
       selectedImage = null;
+
 
       selectedFile = {
         name: file.name,
@@ -346,12 +372,15 @@ if (uploadBtn && fileUpload) {
         text: ""
       };
 
+
       try {
+
         const ext =
           file.name
             .toLowerCase()
             .split(".")
-            .pop() || "";
+            .pop();
+
 
         const readable = [
           "txt",
@@ -367,32 +396,61 @@ if (uploadBtn && fileUpload) {
           "log"
         ];
 
-        if (file.type.startsWith("image/")) {
-          selectedImage =
-            await fileToDataURL(file);
-        } else if (readable.includes(ext)) {
-          const text = await file.text();
+
+        if (
+          readable.includes(ext)
+        ) {
+
+          const text =
+            await file.text();
 
           selectedFile.text =
-            text.slice(0, 120000);
-        } else if (
-          file.type === "application/pdf" ||
+            text.slice(
+              0,
+              120000
+            );
+        }
+
+
+        else if (
+          file.type.startsWith(
+            "image/"
+          )
+        ) {
+
+          selectedImage =
+            await fileToDataURL(
+              file
+            );
+        }
+
+
+        else if (
+          file.type ===
+            "application/pdf" ||
           ext === "pdf"
         ) {
+
           selectedFile.text =
             "PDF file attached: " +
             file.name;
         }
 
-        showAttachmentPreview(file);
+
+        showAttachmentPreview(
+          file
+        );
 
       } catch (error) {
+
         console.error(
-          "RAO AI File Read Error:",
+          "File read error:",
           error
         );
 
-        alert("File read nahi ho paayi.");
+        alert(
+          "File read nahi ho paayi."
+        );
 
         resetAttachment();
       }
@@ -400,219 +458,378 @@ if (uploadBtn && fileUpload) {
   );
 }
 
+
 /* =========================================================
    FILE TO DATA URL
 ========================================================= */
 
 function fileToDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+  return new Promise(
+    (resolve, reject) => {
 
-    reader.onload = () => {
-      resolve(reader.result);
-    };
+      const reader =
+        new FileReader();
 
-    reader.onerror = reject;
 
-    reader.readAsDataURL(file);
-  });
+      reader.onload = () => {
+        resolve(
+          reader.result
+        );
+      };
+
+
+      reader.onerror =
+        reject;
+
+
+      reader.readAsDataURL(
+        file
+      );
+    }
+  );
 }
+
 
 /* =========================================================
    ATTACHMENT PREVIEW
 ========================================================= */
 
-function showAttachmentPreview(file) {
+function showAttachmentPreview(
+  file
+) {
+
   const previewWrap =
-    document.getElementById("previewWrap");
+    document.getElementById(
+      "previewWrap"
+    );
 
   const preview =
-    document.getElementById("preview");
+    document.getElementById(
+      "preview"
+    );
 
   const info =
-    document.getElementById("filePreviewInfo");
+    document.getElementById(
+      "filePreviewInfo"
+    );
 
-  if (!previewWrap || !info) {
+
+  if (
+    !previewWrap ||
+    !info
+  ) {
     return;
   }
 
-  previewWrap.classList.remove("hidden");
+
+  previewWrap.classList.remove(
+    "hidden"
+  );
+
 
   info.innerHTML = `
-    <strong>${escapeHtml(file.name)}</strong>
-    <span>${formatFileSize(file.size)}</span>
+    <strong>${escapeHtml(
+      file.name
+    )}</strong>
+    <span>${formatFileSize(
+      file.size
+    )}</span>
   `;
+
 
   if (
     preview &&
-    file.type.startsWith("image/") &&
+    file.type.startsWith(
+      "image/"
+    ) &&
     selectedImage
   ) {
-    preview.src = selectedImage;
 
-    preview.style.display = "block";
+    preview.src =
+      selectedImage;
+
+    preview.style.display =
+      "block";
+
   } else if (preview) {
-    preview.removeAttribute("src");
 
-    preview.style.display = "none";
+    preview.removeAttribute(
+      "src"
+    );
+
+    preview.style.display =
+      "none";
   }
 }
+
 
 /* =========================================================
    FILE SIZE
 ========================================================= */
 
 function formatFileSize(bytes) {
-  if (!Number.isFinite(bytes)) {
+
+  if (
+    !Number.isFinite(bytes)
+  ) {
     return "";
   }
+
 
   if (bytes < 1024) {
     return `${bytes} B`;
   }
 
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
+
+  if (
+    bytes <
+    1024 * 1024
+  ) {
+    return `${(
+      bytes / 1024
+    ).toFixed(1)} KB`;
   }
 
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+  return `${(
+    bytes /
+    (1024 * 1024)
+  ).toFixed(1)} MB`;
 }
+
 
 /* =========================================================
    ESCAPE HTML
 ========================================================= */
 
 function escapeHtml(value) {
+
   return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replace(
+      /&/g,
+      "&amp;"
+    )
+    .replace(
+      /</g,
+      "&lt;"
+    )
+    .replace(
+      />/g,
+      "&gt;"
+    )
+    .replace(
+      /"/g,
+      "&quot;"
+    )
+    .replace(
+      /'/g,
+      "&#039;"
+    );
 }
+
 
 /* =========================================================
    RESET ATTACHMENT
 ========================================================= */
 
 function resetAttachment() {
+
   selectedImage = null;
+
   selectedFile = null;
+
 
   if (fileUpload) {
     fileUpload.value = "";
   }
 
+
   const previewWrap =
-    document.getElementById("previewWrap");
+    document.getElementById(
+      "previewWrap"
+    );
 
   const preview =
-    document.getElementById("preview");
+    document.getElementById(
+      "preview"
+    );
 
   const info =
-    document.getElementById("filePreviewInfo");
+    document.getElementById(
+      "filePreviewInfo"
+    );
+
 
   if (previewWrap) {
-    previewWrap.classList.add("hidden");
+    previewWrap.classList.add(
+      "hidden"
+    );
   }
 
+
   if (preview) {
-    preview.removeAttribute("src");
-    preview.style.display = "none";
+    preview.removeAttribute(
+      "src"
+    );
+
+    preview.style.display =
+      "none";
   }
+
 
   if (info) {
     info.textContent = "";
   }
 }
 
+
 if (removeFile) {
+
   removeFile.addEventListener(
     "click",
-    (event) => {
-      event.preventDefault();
+    () => {
+
+      if (isSending) return;
 
       resetAttachment();
     }
   );
 }
 
-/* =========================================================
-   CREATE REQUEST MESSAGE
-========================================================= */
-
-function createCurrentUserMessage(displayText) {
-  const currentMessage = {
-    role: "user",
-    content: displayText
-  };
-
-  /*
-   * Image is sent separately in body.images.
-   * Worker already supports body.images.
-   */
-
-  return currentMessage;
-}
 
 /* =========================================================
-   BUILD REQUEST BODY
+   BUILD MESSAGE FOR WORKER
 ========================================================= */
 
-function buildRequestBody() {
-  const body = {
-    messages: messages,
-    webSearch: webSearchEnabled,
-    stream: true
-  };
+function buildUserMessage(
+  text
+) {
+
+  const content = [];
+
+
+  if (text && text.trim()) {
+
+    content.push({
+      type: "input_text",
+      text: text.trim()
+    });
+  }
+
 
   /*
-   * Send image separately because Worker supports:
+   * IMPORTANT:
+   * Image ko custom `image` property
+   * mein nahi bhej rahe.
    *
-   * body.images = [...]
+   * Direct Responses API format use
+   * kar rahe hain.
    */
 
   if (selectedImage) {
-    body.images = [selectedImage];
+
+    content.push({
+      type: "input_image",
+      image_url:
+        selectedImage
+    });
   }
+
 
   /*
-   * Send file information.
-   *
-   * Worker currently understands message content,
-   * so text files are included in the user message.
+   * Text files ka actual content
+   * model ko bhejo.
    */
 
-  return body;
+  if (
+    selectedFile &&
+    selectedFile.text
+  ) {
+
+    content.push({
+      type: "input_text",
+      text:
+        "\n\n[Attached file: " +
+        selectedFile.name +
+        "]\n\n" +
+        selectedFile.text
+    });
+  }
+
+
+  /*
+   * Agar kuch bhi nahi hai
+   * to normal text message.
+   */
+
+  if (!content.length) {
+
+    content.push({
+      type: "input_text",
+      text:
+        text ||
+        "Please analyze the attachment."
+    });
+  }
+
+
+  return {
+    role: "user",
+    content
+  };
 }
 
+
 /* =========================================================
-   STREAM RESPONSE
+   STREAM RESPONSE FROM CLOUDFLARE WORKER
 ========================================================= */
 
-async function readStreamingResponse(response, loadingBubble) {
+async function streamChat(
+  response,
+  bubble
+) {
+
   if (!response.body) {
     throw new Error(
-      "Browser streaming response support nahi karta."
+      "Streaming response body nahi mila."
     );
   }
+
 
   const reader =
     response.body.getReader();
 
-  const decoder =
-    new TextDecoder("utf-8");
 
-  let fullText = "";
+  const decoder =
+    new TextDecoder(
+      "utf-8"
+    );
+
+
   let buffer = "";
 
+  let fullText = "";
+
+
+  /*
+   * Prevent duplicate chunks.
+   */
+
+  let completed = false;
+
+
   while (true) {
-    const { value, done } =
-      await reader.read();
+
+    const {
+      value,
+      done
+    } = await reader.read();
+
 
     if (done) {
       break;
     }
+
 
     buffer += decoder.decode(
       value,
@@ -621,542 +838,645 @@ async function readStreamingResponse(response, loadingBubble) {
       }
     );
 
+
     /*
-     * Responses API streaming normally sends
-     * Server-Sent Events.
+     * SSE events blank line se
+     * separate hote hain.
      */
 
-    const lines =
-      buffer.split(/\r?\n/);
+    const events =
+      buffer.split(
+        "\n\n"
+      );
+
 
     buffer =
-      lines.pop() || "";
+      events.pop() || "";
 
-    for (const line of lines) {
-      const trimmed =
-        line.trim();
 
-      if (!trimmed) {
+    for (
+      const eventBlock
+      of events
+    ) {
+
+      const lines =
+        eventBlock.split(
+          "\n"
+        );
+
+
+      let eventName = "";
+
+      let dataLines = [];
+
+
+      for (
+        const line
+        of lines
+      ) {
+
+        if (
+          line.startsWith(
+            "event:"
+          )
+        ) {
+
+          eventName =
+            line
+              .slice(6)
+              .trim();
+
+        }
+
+        else if (
+          line.startsWith(
+            "data:"
+          )
+        ) {
+
+          dataLines.push(
+            line
+              .slice(5)
+              .trim()
+          );
+        }
+      }
+
+
+      if (!dataLines.length) {
         continue;
       }
 
-      if (!trimmed.startsWith("data:")) {
-        continue;
-      }
 
       const dataText =
-        trimmed.slice(5).trim();
+        dataLines.join(
+          "\n"
+        );
 
-      if (!dataText) {
+
+      if (
+        dataText ===
+        "[DONE]"
+      ) {
+        completed = true;
         continue;
       }
 
-      if (dataText === "[DONE]") {
-        continue;
-      }
 
-      let eventData;
+      let data;
+
 
       try {
-        eventData =
-          JSON.parse(dataText);
+
+        data =
+          JSON.parse(
+            dataText
+          );
+
       } catch {
+
         /*
-         * Ignore incomplete/non-JSON SSE lines.
+         * Non-JSON SSE line ignore.
          */
+
         continue;
       }
 
+
       /*
-       * OpenAI Responses API text delta
+       * Responses API streaming:
+       *
+       * response.output_text.delta
+       *
+       * delta contains only new text.
        */
 
       if (
-        eventData.type ===
+        data.type ===
         "response.output_text.delta"
       ) {
+
         const delta =
-          typeof eventData.delta === "string"
-            ? eventData.delta
+          typeof data.delta ===
+          "string"
+            ? data.delta
             : "";
 
-        if (delta) {
-          fullText += delta;
 
-          if (loadingBubble) {
-            loadingBubble.textContent =
-              fullText;
-
-            chat.scrollTop =
-              chat.scrollHeight;
-          }
+        if (!delta) {
+          continue;
         }
+
+
+        fullText += delta;
+
+
+        /*
+         * IMPORTANT:
+         * textContent = fullText
+         *
+         * appendChild nahi karna.
+         *
+         * Isse duplicate reply nahi hoga.
+         */
+
+        bubble.textContent =
+          fullText;
+
+
+        chat.scrollTop =
+          chat.scrollHeight;
+
+        continue;
       }
+
 
       /*
-       * Some proxy formats may send:
-       * delta / text / output_text
+       * Some compatible endpoints may
+       * send output_text directly.
        */
 
-      else if (
-        typeof eventData.delta === "string"
+      if (
+        data.type ===
+        "response.output_text.done"
       ) {
-        fullText +=
-          eventData.delta;
 
-        if (loadingBubble) {
-          loadingBubble.textContent =
-            fullText;
+        if (
+          typeof data.text ===
+          "string" &&
+          data.text.trim()
+        ) {
 
-          chat.scrollTop =
-            chat.scrollHeight;
+          /*
+           * Sirf tab set karo jab
+           * accumulated text empty ho.
+           */
+
+          if (!fullText) {
+
+            fullText =
+              data.text;
+
+            bubble.textContent =
+              fullText;
+          }
         }
+
+        continue;
       }
 
-      else if (
-        typeof eventData.text === "string"
+
+      /*
+       * Final response event.
+       */
+
+      if (
+        data.type ===
+        "response.completed"
       ) {
-        fullText +=
-          eventData.text;
 
-        if (loadingBubble) {
-          loadingBubble.textContent =
-            fullText;
+        completed = true;
 
-          chat.scrollTop =
-            chat.scrollHeight;
-        }
+        continue;
+      }
+
+
+      /*
+       * Error event.
+       */
+
+      if (
+        data.type ===
+        "error"
+      ) {
+
+        throw new Error(
+          data.error?.message ||
+          "Streaming API error."
+        );
       }
     }
   }
 
+
   /*
-   * Flush decoder
+   * Flush decoder.
    */
 
   buffer += decoder.decode();
 
+
   /*
-   * If Worker returned no streamed delta,
-   * try JSON fallback from accumulated data.
+   * Agar server ne final event nahi bheja
+   * phir bhi accumulated text valid hai.
    */
 
-  if (!fullText.trim()) {
+  if (
+    !fullText.trim()
+  ) {
+
     throw new Error(
       "RAO AI ne koi text response nahi diya."
     );
   }
+
 
   return fullText.trim();
 }
 
-/* =========================================================
-   NORMAL JSON RESPONSE
-========================================================= */
-
-async function readNormalResponse(response) {
-  const rawText =
-    await response.text();
-
-  if (!rawText.trim()) {
-    throw new Error(
-      "Worker ne empty response bheja."
-    );
-  }
-
-  let data;
-
-  try {
-    data =
-      JSON.parse(rawText);
-  } catch (error) {
-    console.error(
-      "Invalid JSON from Worker:",
-      rawText
-    );
-
-    throw new Error(
-      "Worker ne invalid response bheja."
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.error ||
-      `Server error (${response.status})`
-    );
-  }
-
-  const reply =
-    data?.message ||
-    data?.reply ||
-    data?.output_text ||
-    "";
-
-  if (
-    typeof reply !== "string" ||
-    !reply.trim()
-  ) {
-    throw new Error(
-      "RAO AI ne koi text response nahi diya."
-    );
-  }
-
-  return reply.trim();
-}
 
 /* =========================================================
    SEND MESSAGE
 ========================================================= */
 
-async function sendMessage() {
-  if (isSending) {
-    return;
-  }
-
-  const text =
-    input?.value?.trim() || "";
-
-  if (
-    !text &&
-    !selectedImage &&
-    !selectedFile
-  ) {
-    return;
-  }
-
-  isSending = true;
-
-  clearWelcome();
-
-  let displayText = text;
-
-  if (!displayText) {
-    if (selectedImage) {
-      displayText =
-        "Please analyze this image.";
-    } else {
-      displayText =
-        "Please read this file.";
-    }
-  }
-
-  /*
-   * If a readable file is attached,
-   * include its text in the message.
-   */
-
-  if (
-    selectedFile &&
-    selectedFile.text &&
-    !selectedFile.text.startsWith(
-      "PDF file attached:"
-    )
-  ) {
-    displayText =
-      `${displayText}\n\nAttached file: ${selectedFile.name}\n\n${selectedFile.text}`;
-  }
-
-  addMessage(
-    displayText,
-    "user"
-  );
-
-  if (input) {
-    input.value = "";
-    input.style.height = "auto";
-  }
-
-  const loading =
-    addMessage(
-      "▌",
-      "assistant"
-    );
-
-  setUIBusy(true);
-
-  let userMessageAdded = false;
-
-  try {
-    const currentMessage =
-      createCurrentUserMessage(
-        displayText
-      );
-
-    messages.push(
-      currentMessage
-    );
-
-    userMessageAdded = true;
-
-    const requestBody =
-      buildRequestBody();
-
-    /*
-     * IMPORTANT:
-     *
-     * This uses the same-origin Cloudflare Worker:
-     *
-     * POST /chat
-     *
-     * No OpenAI API key is exposed.
-     */
-
-    const response =
-      await fetch(
-        "/chat",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-            Accept:
-              "text/event-stream, application/json"
-          },
-
-          body:
-            JSON.stringify(
-              requestBody
-            )
-        }
-      );
-
-    /*
-     * Server error
-     */
-
-    if (!response.ok) {
-      let errorText = "";
-
-      try {
-        errorText =
-          await response.text();
-      } catch {
-        errorText = "";
-      }
-
-      let errorData = null;
-
-      if (errorText.trim()) {
-        try {
-          errorData =
-            JSON.parse(
-              errorText
-            );
-        } catch {
-          errorData = null;
-        }
-      }
-
-      throw new Error(
-        errorData?.error ||
-        errorData?.details ||
-        `Server error (${response.status})`
-      );
-    }
-
-    /*
-     * Worker stream response
-     */
-
-    const contentType =
-      response.headers.get(
-        "content-type"
-      ) || "";
-
-    let reply = "";
-
-    if (
-      contentType.includes(
-        "text/event-stream"
-      )
-    ) {
-      reply =
-        await readStreamingResponse(
-          response,
-          loading
-        );
-    } else {
-      /*
-       * JSON fallback
-       */
-      reply =
-        await readNormalResponse(
-          response
-        );
-
-      if (loading) {
-        loading.textContent =
-          reply;
-      }
-    }
-
-    if (!reply.trim()) {
-      throw new Error(
-        "RAO AI ne koi text response nahi diya."
-      );
-    }
-
-    /*
-     * Save assistant response
-     */
-
-    messages.push({
-      role: "assistant",
-      content: reply
-    });
-
-    if (loading) {
-      loading.textContent =
-        reply;
-    }
-
-  } catch (error) {
-    console.error(
-      "RAO AI ERROR:",
-      error
-    );
-
-    /*
-     * Remove failed user message
-     */
-
-    if (
-      userMessageAdded &&
-      messages.length &&
-      messages[
-        messages.length - 1
-      ]?.role === "user"
-    ) {
-      messages.pop();
-    }
-
-    if (loading) {
-      loading.textContent =
-        "❌ Error: " +
-        (
-          error?.message ||
-          "RAO AI se response nahi mila."
-        );
-    }
-
-  } finally {
-    resetAttachment();
-
-    setUIBusy(false);
-
-    isSending = false;
-
-    if (input) {
-      input.focus();
-    }
-  }
-}
-
-/* =========================================================
-   UI BUSY STATE
-========================================================= */
-
-function setUIBusy(busy) {
-  if (input) {
-    input.disabled = busy;
-  }
-
-  if (micBtn) {
-    micBtn.disabled = busy;
-  }
-
-  if (uploadBtn) {
-    uploadBtn.disabled = busy;
-  }
-
-  if (sendBtn) {
-    sendBtn.disabled = busy;
-  }
-
-  if (webSearchBtn) {
-    webSearchBtn.disabled = busy;
-  }
-}
-
-/* =========================================================
-   FORM SUBMIT
-   IMPORTANT: PREVENT PAGE REFRESH
-========================================================= */
-
 if (form) {
+
   form.addEventListener(
     "submit",
-    (event) => {
+    async (event) => {
+
       /*
-       * THIS STOPS PAGE REFRESH
+       * Browser form submit ko
+       * page refresh karne se roko.
        */
+
       event.preventDefault();
+
       event.stopPropagation();
 
-      sendMessage();
-    }
-  );
-} else {
-  console.error(
-    "RAO AI ERROR: #composer form nahi mila."
-  );
-}
 
-/* =========================================================
-   SEND BUTTON SAFETY
-========================================================= */
+      if (isSending) {
+        return;
+      }
 
-if (sendBtn) {
-  /*
-   * Important:
-   * Even if HTML button has wrong type,
-   * prevent default and send manually.
-   */
 
-  sendBtn.addEventListener(
-    "click",
-    (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+      const text =
+        input?.value?.trim() ||
+        "";
 
-      if (!isSending) {
-        sendMessage();
+
+      if (
+        !text &&
+        !selectedImage &&
+        !selectedFile
+      ) {
+        return;
+      }
+
+
+      clearWelcome();
+
+
+      isSending = true;
+
+
+      const displayText =
+        text ||
+        (
+          selectedImage
+            ? "Please analyze this image."
+            : "Please read this file."
+        );
+
+
+      /*
+       * USER MESSAGE
+       */
+
+      addMessage(
+        displayText,
+        "user"
+      );
+
+
+      /*
+       * Input clear
+       */
+
+      if (input) {
+        input.value = "";
+
+        input.style.height =
+          "auto";
+      }
+
+
+      /*
+       * ASSISTANT EMPTY BUBBLE
+       *
+       * Streaming text isi bubble
+       * mein aayega.
+       */
+
+      const assistant =
+        addMessage(
+          "",
+          "assistant"
+        );
+
+
+      const loadingBubble =
+        assistant.bubble;
+
+
+      /*
+       * Temporary streaming indicator
+       */
+
+      loadingBubble.textContent =
+        "Thinking…";
+
+
+      const sendBtn =
+        document.getElementById(
+          "send"
+        );
+
+
+      /*
+       * Disable controls
+       */
+
+      if (input) {
+        input.disabled = true;
+      }
+
+      if (micBtn) {
+        micBtn.disabled = true;
+      }
+
+      if (uploadBtn) {
+        uploadBtn.disabled = true;
+      }
+
+      if (sendBtn) {
+        sendBtn.disabled = true;
+      }
+
+      if (webSearchBtn) {
+        webSearchBtn.disabled =
+          true;
+      }
+
+
+      /*
+       * Build actual API message
+       */
+
+      const userMessage =
+        buildUserMessage(
+          text
+        );
+
+
+      /*
+       * Conversation history mein
+       * same message EXACTLY ONCE.
+       */
+
+      messages.push(
+        userMessage
+      );
+
+
+      try {
+
+        /*
+         * Worker ko streaming request.
+         */
+
+        const response =
+          await fetch(
+            "/chat",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              body:
+                JSON.stringify({
+                  messages,
+                  webSearch:
+                    webSearchEnabled,
+
+                  /*
+                   * IMPORTANT
+                   */
+
+                  stream: true
+                })
+            }
+          );
+
+
+        /*
+         * Non-OK response ko JSON se
+         * read karne ki koshish.
+         */
+
+        if (!response.ok) {
+
+          let errorText = "";
+
+          try {
+
+            errorText =
+              await response.text();
+
+          } catch {
+            errorText = "";
+          }
+
+
+          let errorData = null;
+
+
+          if (
+            errorText.trim()
+          ) {
+
+            try {
+
+              errorData =
+                JSON.parse(
+                  errorText
+                );
+
+            } catch {
+              errorData = null;
+            }
+          }
+
+
+          throw new Error(
+            errorData?.error ||
+            errorText ||
+            `Server error (${response.status})`
+          );
+        }
+
+
+        /*
+         * LIVE STREAM
+         */
+
+        const reply =
+          await streamChat(
+            response,
+            loadingBubble
+          );
+
+
+        /*
+         * Assistant history mein
+         * FINAL COMPLETE reply sirf
+         * ek baar add karo.
+         */
+
+        messages.push({
+          role: "assistant",
+          content: [
+            {
+              type:
+                "output_text",
+              text: reply
+            }
+          ]
+        });
+
+
+        /*
+         * Ensure final text clean hai.
+         */
+
+        loadingBubble.textContent =
+          reply;
+
+
+        chat.scrollTop =
+          chat.scrollHeight;
+
+
+      } catch (error) {
+
+        console.error(
+          "RAO AI ERROR:",
+          error
+        );
+
+
+        /*
+         * Failed user request ko
+         * history se remove karo.
+         */
+
+        if (
+          messages.length &&
+          messages[
+            messages.length - 1
+          ]?.role === "user"
+        ) {
+
+          messages.pop();
+        }
+
+
+        /*
+         * Agar assistant empty tha
+         * to error show karo.
+         */
+
+        loadingBubble.textContent =
+          "❌ Error: " +
+          (
+            error?.message ||
+            "RAO AI se response nahi mila."
+          );
+
+
+      } finally {
+
+        resetAttachment();
+
+
+        if (input) {
+          input.disabled = false;
+        }
+
+        if (micBtn) {
+          micBtn.disabled = false;
+        }
+
+        if (uploadBtn) {
+          uploadBtn.disabled = false;
+        }
+
+        if (sendBtn) {
+          sendBtn.disabled = false;
+        }
+
+        if (webSearchBtn) {
+          webSearchBtn.disabled = false;
+        }
+
+
+        isSending = false;
+
+
+        input?.focus();
       }
     }
   );
 }
+
 
 /* =========================================================
    ENTER TO SEND
 ========================================================= */
 
 if (input) {
+
   input.addEventListener(
     "keydown",
     (event) => {
+
       if (
         event.key === "Enter" &&
         !event.shiftKey
       ) {
+
         event.preventDefault();
-        event.stopPropagation();
+
 
         if (
           !input.disabled &&
           !isSending
         ) {
-          sendMessage();
+
+          /*
+           * requestSubmit()
+           * page refresh nahi karega
+           * kyunki submit handler preventDefault
+           * karta hai.
+           */
+
+          form?.requestSubmit();
         }
       }
     }
   );
 
+
   input.addEventListener(
     "input",
     () => {
-      input.style.height = "auto";
+
+      input.style.height =
+        "auto";
+
 
       input.style.height =
         Math.min(
@@ -1167,83 +1487,119 @@ if (input) {
   );
 }
 
+
 /* =========================================================
    NEW CHAT
 ========================================================= */
 
 if (newChatBtn) {
+
   newChatBtn.addEventListener(
     "click",
-    (event) => {
-      event.preventDefault();
+    () => {
+
+      if (isSending) {
+        return;
+      }
+
 
       if (
-        "speechSynthesis" in window
+        "speechSynthesis" in
+        window
       ) {
+
         speechSynthesis.cancel();
       }
 
+
       messages = [];
 
+
       selectedImage = null;
+
       selectedFile = null;
 
-      webSearchEnabled = false;
 
-      isSending = false;
+      webSearchEnabled =
+        false;
+
+
+      resetAttachment();
+
 
       if (fileUpload) {
         fileUpload.value = "";
       }
 
+
       if (webSearchBtn) {
+
         webSearchBtn.classList.remove(
           "active"
         );
 
+
         webSearchBtn.textContent =
           "🌐 Web Search: OFF";
 
-        webSearchBtn.disabled = false;
+
+        webSearchBtn.disabled =
+          false;
       }
+
 
       const note =
         document.getElementById(
           "webSearchNote"
         );
 
+
       if (note) {
+
         note.textContent =
           "Current web information is off";
       }
 
-      resetAttachment();
 
       if (chat) {
+
         chat.innerHTML = `
           <div class="welcome">
-            <div class="logo">✦</div>
 
-            <h1>Welcome to RAO AI</h1>
+            <div class="logo">
+              ✦
+            </div>
+
+            <h1>
+              Welcome to RAO AI
+            </h1>
 
             <p>
               Ask anything, upload an image/PDF/file,
               speak, or turn on Web Search for
               current information.
             </p>
+
           </div>
         `;
       }
 
+
       if (input) {
+
         input.value = "";
-        input.style.height = "auto";
+
+        input.style.height =
+          "auto";
+
         input.disabled = false;
+
         input.focus();
       }
     }
   );
 }
+
 
 /* =========================================================
    PAGE READY
@@ -1252,36 +1608,10 @@ if (newChatBtn) {
 window.addEventListener(
   "load",
   () => {
-    console.log(
-      "RAO AI frontend loaded successfully."
-    );
 
     if (input) {
       input.focus();
     }
-  }
-);
 
-/* =========================================================
-   GLOBAL ERROR LOGGING
-========================================================= */
-
-window.addEventListener(
-  "error",
-  (event) => {
-    console.error(
-      "RAO AI JavaScript Error:",
-      event.error || event.message
-    );
-  }
-);
-
-window.addEventListener(
-  "unhandledrejection",
-  (event) => {
-    console.error(
-      "RAO AI Promise Error:",
-      event.reason
-    );
   }
 );
