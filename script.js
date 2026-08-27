@@ -18,8 +18,6 @@ let isListening = false;
 
 /* =========================
    TEXT TO SPEECH
-   AI TAB BOLEGA JAB USER
-   SPEAKER BUTTON DABAYEGA
 ========================= */
 
 function speakText(text, button = null) {
@@ -182,7 +180,8 @@ if (webSearchBtn) {
         ? "🌐 Web Search: ON"
         : "🌐 Web Search: OFF";
 
-    const note = document.getElementById("webSearchNote");
+    const note =
+      document.getElementById("webSearchNote");
 
     if (note) {
       note.textContent = webSearchEnabled
@@ -194,7 +193,7 @@ if (webSearchBtn) {
 
 /* =========================
    VOICE INPUT
-   USER MIC SE BOLEGA
+   EXISTING BROWSER SPEECH RECOGNITION
 ========================= */
 
 const SpeechRecognition =
@@ -340,11 +339,6 @@ if (uploadBtn && fileUpload) {
           file.type === "application/pdf" ||
           ext === "pdf"
         ) {
-          /*
-           * Browser PDF text extraction is not
-           * enabled here yet. File metadata is
-           * still preserved so the UI does not break.
-           */
           selectedFile.text =
             "PDF file attached: " + file.name;
         }
@@ -357,9 +351,7 @@ if (uploadBtn && fileUpload) {
           error
         );
 
-        alert(
-          "File read nahi ho paayi."
-        );
+        alert("File read nahi ho paayi.");
 
         resetAttachment();
       }
@@ -492,8 +484,161 @@ if (removeFile) {
 }
 
 /* =========================
+   STREAMING HELPERS
+========================= */
+
+async function readStreamingResponse(
+  response,
+  bubble
+) {
+  if (!response.body) {
+    throw new Error(
+      "Browser streaming response support nahi karta."
+    );
+  }
+
+  const reader =
+    response.body.getReader();
+
+  const decoder =
+    new TextDecoder("utf-8");
+
+  let buffer = "";
+  let fullText = "";
+
+  while (true) {
+    const { value, done } =
+      await reader.read();
+
+    if (done) break;
+
+    buffer += decoder.decode(
+      value,
+      { stream: true }
+    );
+
+    const events =
+      buffer.split("\n\n");
+
+    buffer =
+      events.pop() || "";
+
+    for (const event of events) {
+      const lines =
+        event.split("\n");
+
+      let dataText = "";
+
+      for (const line of lines) {
+        if (line.startsWith("data:")) {
+          dataText +=
+            line.slice(5).trim();
+        }
+      }
+
+      if (!dataText) continue;
+
+      if (dataText === "[DONE]") {
+        continue;
+      }
+
+      let data;
+
+      try {
+        data =
+          JSON.parse(dataText);
+      } catch {
+        continue;
+      }
+
+      if (
+        data?.type === "delta" &&
+        typeof data.text === "string"
+      ) {
+        fullText += data.text;
+
+        bubble.textContent =
+          fullText;
+
+        chat.scrollTop =
+          chat.scrollHeight;
+      }
+
+      if (data?.type === "error") {
+        throw new Error(
+          data.error ||
+          "Streaming error."
+        );
+      }
+    }
+  }
+
+  /*
+    Flush remaining decoder text.
+  */
+  buffer += decoder.decode();
+
+  return fullText.trim();
+}
+
+/* =========================
+   NORMAL RESPONSE FALLBACK
+========================= */
+
+async function readNormalResponse(
+  response
+) {
+  const rawText =
+    await response.text();
+
+  let data = null;
+
+  if (rawText.trim()) {
+    try {
+      data =
+        JSON.parse(rawText);
+    } catch {
+      throw new Error(
+        "Worker ne invalid response bheja."
+      );
+    }
+  }
+
+  if (!response.ok) {
+    const detail =
+      data?.details?.error?.message ||
+      data?.details?.message ||
+      data?.details ||
+      "";
+
+    throw new Error(
+      data?.error ||
+      detail ||
+      `Server error (${response.status})`
+    );
+  }
+
+  const reply =
+    data?.message ||
+    data?.reply ||
+    data?.output_text ||
+    "";
+
+  if (
+    typeof reply !== "string" ||
+    !reply.trim()
+  ) {
+    throw new Error(
+      "RAO AI se empty response mila."
+    );
+  }
+
+  return reply.trim();
+}
+
+/* =========================
    SEND MESSAGE
-   CLOUDflare Worker -> GEMINI
+   OPENAI STREAMING
 ========================= */
 
 if (form) {
@@ -530,11 +675,18 @@ if (form) {
 
       input.value = "";
 
+      /*
+        Empty assistant bubble.
+        Text will appear here live.
+      */
       const loading =
         addMessage(
-          "Thinking...",
+          "",
           "assistant"
         );
+
+      loading.textContent =
+        "Thinking...";
 
       const sendBtn =
         document.getElementById("send");
@@ -559,16 +711,15 @@ if (form) {
         webSearchBtn.disabled = true;
       }
 
+      let userMessageAdded =
+        false;
+
       try {
         const currentMessage = {
           role: "user",
           content: displayText
         };
 
-        /*
-         * Keep image/file information in the
-         * frontend conversation state.
-         */
         if (selectedImage) {
           currentMessage.image =
             selectedImage;
@@ -583,12 +734,14 @@ if (form) {
           currentMessage
         );
 
+        userMessageAdded =
+          true;
+
         /*
-         * IMPORTANT:
-         * Your Worker endpoint is /chat.
-         * Gemini API key stays inside the
-         * Cloudflare Worker secret.
-         */
+          IMPORTANT:
+          stream: true enables
+          token-by-token output.
+        */
         const response =
           await fetch(
             "/chat",
@@ -603,69 +756,57 @@ if (form) {
               body: JSON.stringify({
                 messages: messages,
                 webSearch:
-                  webSearchEnabled
+                  webSearchEnabled,
+                stream: true
               })
             }
           );
 
-        const rawText =
-          await response.text();
-
-        let data = null;
-
-        if (rawText.trim()) {
-          try {
-            data =
-              JSON.parse(
-                rawText
-              );
-          } catch (jsonError) {
-            console.error(
-              "Invalid JSON from Worker:",
-              rawText
-            );
-
-            throw new Error(
-              "Worker ne invalid response bheja."
-            );
-          }
-        }
-
+        /*
+          Streaming error response
+          comes as normal JSON.
+        */
         if (!response.ok) {
+          const rawError =
+            await response.text();
+
+          let errorData = null;
+
+          try {
+            errorData =
+              rawError
+                ? JSON.parse(rawError)
+                : null;
+          } catch {
+            errorData = null;
+          }
+
           throw new Error(
-            data?.error ||
-              `Server error (${response.status})`
+            errorData?.error ||
+            errorData?.details?.error?.message ||
+            `Server error (${response.status})`
           );
         }
 
         /*
-         * Your Worker currently returns:
-         *
-         * {
-         *   ok: true,
-         *   message: "Gemini reply"
-         * }
-         *
-         * So message is checked first.
-         */
+          Read SSE token-by-token.
+        */
         const reply =
-          data?.message ||
-          data?.reply ||
-          data?.output_text ||
-          "";
+          await readStreamingResponse(
+            response,
+            loading
+          );
 
-        if (
-          typeof reply !== "string" ||
-          !reply.trim()
-        ) {
+        if (!reply) {
           throw new Error(
-            "Gemini se empty response mila."
+            "RAO AI ne koi text response nahi diya."
           );
         }
 
-        loading.textContent =
-          reply;
-
+        /*
+          Store complete assistant reply
+          after stream finishes.
+        */
         messages.push({
           role: "assistant",
           content: reply
@@ -673,17 +814,16 @@ if (form) {
 
       } catch (error) {
         console.error(
-          "RAO AI ERROR:",
+          "RAO AI STREAM ERROR:",
           error
         );
 
         /*
-         * Remove the user message from
-         * conversation state if the request
-         * failed, so a retry does not create
-         * duplicate history.
-         */
+          Remove only the failed user
+          message from conversation history.
+        */
         if (
+          userMessageAdded &&
           messages.length &&
           messages[messages.length - 1]
             ?.role === "user"
