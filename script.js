@@ -17,834 +17,847 @@ let selectedFile = null;
 let isListening = false;
 
 /* =========================
-   TEXT TO SPEECH
-   AI TAB BOLEGA JAB USER
-   SPEAKER BUTTON DABAYEGA
+TEXT TO SPEECH
+AI TAB BOLEGA JAB USER
+SPEAKER BUTTON DABAYEGA
 ========================= */
 
 function speakText(text, button = null) {
-  if (!("speechSynthesis" in window)) {
-    alert("Aapke browser mein voice support available nahi hai.");
-    return;
-  }
+if (!("speechSynthesis" in window)) {
+alert("Aapke browser mein voice support available nahi hai.");
+return;
+}
 
-  if (!text || !text.trim()) return;
+if (!text || !text.trim()) return;
 
-  if (speechSynthesis.speaking) {
-    speechSynthesis.cancel();
+if (speechSynthesis.speaking) {
+speechSynthesis.cancel();
 
-    if (button) {
-      button.textContent = "🔊";
-    }
+if (button) {  
+  button.textContent = "🔊";  
+}  
 
-    return;
-  }
+return;
 
-  const cleanText = String(text)
-    .replace(/[*_`#]/g, "")
-    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
-    .trim();
+}
 
-  if (!cleanText) return;
+const cleanText = String(text)
+.replace(/[_`#]/g, "")
+.replace(/[(.?)](.*?)/g, "$1")
+.trim();
 
-  const utterance = new SpeechSynthesisUtterance(cleanText);
+if (!cleanText) return;
 
-  utterance.lang = "hi-IN";
-  utterance.rate = 1;
-  utterance.pitch = 1;
-  utterance.volume = 1;
+const utterance = new SpeechSynthesisUtterance(cleanText);
 
-  const voices = speechSynthesis.getVoices();
+utterance.lang = "hi-IN";
+utterance.rate = 1;
+utterance.pitch = 1;
+utterance.volume = 1;
 
-  const hindiVoice = voices.find(
-    (voice) =>
-      voice.lang &&
-      voice.lang.toLowerCase().startsWith("hi")
-  );
+const voices = speechSynthesis.getVoices();
 
-  if (hindiVoice) {
-    utterance.voice = hindiVoice;
-  }
+const hindiVoice = voices.find(
+(voice) =>
+voice.lang &&
+voice.lang.toLowerCase().startsWith("hi")
+);
 
-  if (button) {
-    button.textContent = "⏹️";
-  }
+if (hindiVoice) {
+utterance.voice = hindiVoice;
+}
 
-  utterance.onend = () => {
-    if (button) {
-      button.textContent = "🔊";
-    }
-  };
+if (button) {
+button.textContent = "⏹️";
+}
 
-  utterance.onerror = () => {
-    if (button) {
-      button.textContent = "🔊";
-    }
-  };
+utterance.onend = () => {
+if (button) {
+button.textContent = "🔊";
+}
+};
 
-  speechSynthesis.cancel();
+utterance.onerror = () => {
+if (button) {
+button.textContent = "🔊";
+}
+};
 
-  setTimeout(() => {
-    speechSynthesis.speak(utterance);
-  }, 50);
+speechSynthesis.cancel();
+
+setTimeout(() => {
+speechSynthesis.speak(utterance);
+}, 50);
 }
 
 if ("speechSynthesis" in window) {
-  speechSynthesis.onvoiceschanged = () => {
-    speechSynthesis.getVoices();
-  };
+speechSynthesis.onvoiceschanged = () => {
+speechSynthesis.getVoices();
+};
 }
 
 /* =========================
-   CHAT MESSAGE
+CHAT MESSAGE
 ========================= */
 
 function addMessage(text, who = "assistant") {
-  const row = document.createElement("div");
+const row = document.createElement("div");
 
-  row.className = `msg ${who}`;
+row.className = msg ${who};
 
-  row.innerHTML = `
-    <div class="avatar">
-      ${who === "user" ? "You" : "✦"}
-    </div>
+row.innerHTML = `
+<div class="avatar">
+${who === "user" ? "You" : "✦"}
+</div>
 
-    <div class="message-content">
-      <div class="bubble"></div>
+<div class="message-content">  
+  <div class="bubble"></div>  
 
-      ${
-        who === "assistant"
-          ? `
-            <div class="message-actions">
-              <button
-                type="button"
-                class="speak-btn"
-                aria-label="Speak this message"
-                title="RAO AI ko bolne ke liye dabaye"
-              >
-                🔊
-              </button>
-            </div>
-          `
-          : ""
-      }
-    </div>
-  `;
+  ${  
+    who === "assistant"  
+      ? `  
+        <div class="message-actions">  
+          <button  
+            type="button"  
+            class="speak-btn"  
+            aria-label="Speak this message"  
+            title="RAO AI ko bolne ke liye dabaye"  
+          >  
+            🔊  
+          </button>  
+        </div>  
+      `  
+      : ""  
+  }  
+</div>
 
-  const bubble = row.querySelector(".bubble");
+`;
 
-  bubble.textContent = text || "";
+const bubble = row.querySelector(".bubble");
 
-  chat.appendChild(row);
+bubble.textContent = text || "";
 
-  chat.scrollTop = chat.scrollHeight;
+chat.appendChild(row);
 
-  if (who === "assistant") {
-    const speakBtn = row.querySelector(".speak-btn");
+chat.scrollTop = chat.scrollHeight;
 
-    if (speakBtn) {
-      speakBtn.addEventListener("click", () => {
-        speakText(bubble.textContent, speakBtn);
-      });
-    }
-  }
+if (who === "assistant") {
+const speakBtn = row.querySelector(".speak-btn");
 
-  return bubble;
+if (speakBtn) {  
+  speakBtn.addEventListener("click", () => {  
+    speakText(bubble.textContent, speakBtn);  
+  });  
+}
+
+}
+
+return bubble;
 }
 
 /* =========================
-   CLEAR WELCOME
+CLEAR WELCOME
 ========================= */
 
 function clearWelcome() {
-  const welcome = chat?.querySelector(".welcome");
+const welcome = chat?.querySelector(".welcome");
 
-  if (welcome) {
-    welcome.remove();
-  }
+if (welcome) {
+welcome.remove();
+}
 }
 
 /* =========================
-   WEB SEARCH
+WEB SEARCH
 ========================= */
 
 if (webSearchBtn) {
-  webSearchBtn.addEventListener("click", () => {
-    webSearchEnabled = !webSearchEnabled;
+webSearchBtn.addEventListener("click", () => {
+webSearchEnabled = !webSearchEnabled;
 
-    webSearchBtn.classList.toggle(
-      "active",
-      webSearchEnabled
-    );
+webSearchBtn.classList.toggle(  
+  "active",  
+  webSearchEnabled  
+);  
 
-    webSearchBtn.textContent =
-      webSearchEnabled
-        ? "🌐 Web Search: ON"
-        : "🌐 Web Search: OFF";
+webSearchBtn.textContent =  
+  webSearchEnabled  
+    ? "🌐 Web Search: ON"  
+    : "🌐 Web Search: OFF";  
 
-    const note = document.getElementById("webSearchNote");
+const note = document.getElementById("webSearchNote");  
 
-    if (note) {
-      note.textContent = webSearchEnabled
-        ? "Live web information is ON"
-        : "Current web information is off";
-    }
-  });
+if (note) {  
+  note.textContent = webSearchEnabled  
+    ? "Live web information is ON"  
+    : "Current web information is off";  
+}
+
+});
 }
 
 /* =========================
-   VOICE INPUT
-   USER MIC SE BOLEGA
+VOICE INPUT
+USER MIC SE BOLEGA
 ========================= */
 
 const SpeechRecognition =
-  window.SpeechRecognition ||
-  window.webkitSpeechRecognition;
+window.SpeechRecognition ||
+window.webkitSpeechRecognition;
 
 if (micBtn && SpeechRecognition) {
-  const recognition = new SpeechRecognition();
+const recognition = new SpeechRecognition();
 
-  recognition.lang = "hi-IN";
-  recognition.continuous = false;
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
+recognition.lang = "hi-IN";
+recognition.continuous = false;
+recognition.interimResults = false;
+recognition.maxAlternatives = 1;
 
-  recognition.onstart = () => {
-    isListening = true;
+recognition.onstart = () => {
+isListening = true;
 
-    micBtn.classList.add("listening");
+micBtn.classList.add("listening");  
 
-    micBtn.textContent = "🔴";
-  };
+micBtn.textContent = "🔴";
 
-  recognition.onresult = (event) => {
-    const transcript =
-      event.results?.[0]?.[0]?.transcript || "";
+};
 
-    if (input && transcript) {
-      input.value = transcript;
+recognition.onresult = (event) => {
+const transcript =
+event.results?.[0]?.[0]?.transcript || "";
 
-      input.dispatchEvent(
-        new Event("input")
-      );
-    }
-  };
+if (input && transcript) {  
+  input.value = transcript;  
 
-  recognition.onerror = (event) => {
-    console.error(
-      "Speech recognition error:",
-      event?.error
-    );
+  input.dispatchEvent(  
+    new Event("input")  
+  );  
+}
 
-    isListening = false;
+};
 
-    micBtn.classList.remove("listening");
+recognition.onerror = (event) => {
+console.error(
+"Speech recognition error:",
+event?.error
+);
 
-    micBtn.textContent = "🎤";
-  };
+isListening = false;  
 
-  recognition.onend = () => {
-    isListening = false;
+micBtn.classList.remove("listening");  
 
-    micBtn.classList.remove("listening");
+micBtn.textContent = "🎤";
 
-    micBtn.textContent = "🎤";
-  };
+};
 
-  micBtn.addEventListener("click", () => {
-    try {
-      if (isListening) {
-        recognition.stop();
-      } else {
-        recognition.start();
-      }
-    } catch (error) {
-      console.error(
-        "Speech recognition start error:",
-        error
-      );
-    }
-  });
+recognition.onend = () => {
+isListening = false;
+
+micBtn.classList.remove("listening");  
+
+micBtn.textContent = "🎤";
+
+};
+
+micBtn.addEventListener("click", () => {
+try {
+if (isListening) {
+recognition.stop();
+} else {
+recognition.start();
+}
+} catch (error) {
+console.error(
+"Speech recognition start error:",
+error
+);
+}
+});
 } else if (micBtn) {
-  micBtn.addEventListener("click", () => {
-    alert(
-      "Voice input is not supported in this browser. Chrome browser try karein."
-    );
-  });
+micBtn.addEventListener("click", () => {
+alert(
+"Voice input is not supported in this browser. Chrome browser try karein."
+);
+});
 }
 
 /* =========================
-   FILE UPLOAD
+FILE UPLOAD
 ========================= */
 
 if (uploadBtn && fileUpload) {
-  uploadBtn.addEventListener("click", () => {
-    fileUpload.click();
-  });
+uploadBtn.addEventListener("click", () => {
+fileUpload.click();
+});
 
-  fileUpload.addEventListener(
-    "change",
-    async () => {
-      const file = fileUpload.files?.[0];
+fileUpload.addEventListener(
+"change",
+async () => {
+const file = fileUpload.files?.[0];
 
-      if (!file) return;
+if (!file) return;  
 
-      if (file.size > 15 * 1024 * 1024) {
-        alert("File 15 MB se chhoti rakho.");
+  if (file.size > 15 * 1024 * 1024) {  
+    alert("File 15 MB se chhoti rakho.");  
 
-        resetAttachment();
+    resetAttachment();  
 
-        return;
-      }
+    return;  
+  }  
 
-      selectedImage = null;
+  selectedImage = null;  
 
-      selectedFile = {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        text: ""
-      };
+  selectedFile = {  
+    name: file.name,  
+    size: file.size,  
+    type: file.type,  
+    text: ""  
+  };  
 
-      try {
-        const ext = file.name
-          .toLowerCase()
-          .split(".")
-          .pop();
+  try {  
+    const ext = file.name  
+      .toLowerCase()  
+      .split(".")  
+      .pop();  
 
-        const readable = [
-          "txt",
-          "md",
-          "csv",
-          "json",
-          "html",
-          "htm",
-          "js",
-          "css",
-          "py",
-          "xml",
-          "log"
-        ];
+    const readable = [  
+      "txt",  
+      "md",  
+      "csv",  
+      "json",  
+      "html",  
+      "htm",  
+      "js",  
+      "css",  
+      "py",  
+      "xml",  
+      "log"  
+    ];  
 
-        if (readable.includes(ext)) {
-          const text = await file.text();
+    if (readable.includes(ext)) {  
+      const text = await file.text();  
 
-          selectedFile.text =
-            text.slice(0, 120000);
-        } else if (
-          file.type.startsWith("image/")
-        ) {
-          selectedImage =
-            await fileToDataURL(file);
-        } else if (
-          file.type === "application/pdf" ||
-          ext === "pdf"
-        ) {
-          /*
-           * Browser PDF text extraction is not
-           * enabled here yet. File metadata is
-           * still preserved so the UI does not break.
-           */
-          selectedFile.text =
-            "PDF file attached: " + file.name;
-        }
+      selectedFile.text =  
+        text.slice(0, 120000);  
+    } else if (  
+      file.type.startsWith("image/")  
+    ) {  
+      selectedImage =  
+        await fileToDataURL(file);  
+    } else if (  
+      file.type === "application/pdf" ||  
+      ext === "pdf"  
+    ) {  
+      /*  
+       * Browser PDF text extraction is not  
+       * enabled here yet. File metadata is  
+       * still preserved so the UI does not break.  
+       */  
+      selectedFile.text =  
+        "PDF file attached: " + file.name;  
+    }  
 
-        showAttachmentPreview(file);
+    showAttachmentPreview(file);  
 
-      } catch (error) {
-        console.error(
-          "File read error:",
-          error
-        );
+  } catch (error) {  
+    console.error(  
+      "File read error:",  
+      error  
+    );  
 
-        alert(
-          "File read nahi ho paayi."
-        );
+    alert(  
+      "File read nahi ho paayi."  
+    );  
 
-        resetAttachment();
-      }
-    }
-  );
+    resetAttachment();  
+  }  
+}
+
+);
 }
 
 /* =========================
-   FILE TO DATA URL
+FILE TO DATA URL
 ========================= */
 
 function fileToDataURL(file) {
-  return new Promise(
-    (resolve, reject) => {
-      const reader = new FileReader();
+return new Promise(
+(resolve, reject) => {
+const reader = new FileReader();
 
-      reader.onload = () => {
-        resolve(reader.result);
-      };
+reader.onload = () => {  
+    resolve(reader.result);  
+  };  
 
-      reader.onerror = reject;
+  reader.onerror = reject;  
 
-      reader.readAsDataURL(file);
-    }
-  );
+  reader.readAsDataURL(file);  
+}
+
+);
 }
 
 /* =========================
-   ATTACHMENT PREVIEW
+ATTACHMENT PREVIEW
 ========================= */
 
 function showAttachmentPreview(file) {
-  const previewWrap =
-    document.getElementById("previewWrap");
+const previewWrap =
+document.getElementById("previewWrap");
 
-  const preview =
-    document.getElementById("preview");
+const preview =
+document.getElementById("preview");
 
-  const info =
-    document.getElementById("filePreviewInfo");
+const info =
+document.getElementById("filePreviewInfo");
 
-  if (!previewWrap || !info) return;
+if (!previewWrap || !info) return;
 
-  previewWrap.classList.remove("hidden");
+previewWrap.classList.remove("hidden");
 
-  info.innerHTML = `
-    <strong>${escapeHtml(file.name)}</strong>
-    <span>${formatFileSize(file.size)}</span>
-  `;
+info.innerHTML =   <strong>${escapeHtml(file.name)}</strong>   <span>${formatFileSize(file.size)}</span>  ;
 
-  if (
-    preview &&
-    file.type.startsWith("image/") &&
-    selectedImage
-  ) {
-    preview.src = selectedImage;
+if (
+preview &&
+file.type.startsWith("image/") &&
+selectedImage
+) {
+preview.src = selectedImage;
 
-    preview.style.display = "block";
-  } else if (preview) {
-    preview.removeAttribute("src");
+preview.style.display = "block";
 
-    preview.style.display = "none";
-  }
+} else if (preview) {
+preview.removeAttribute("src");
+
+preview.style.display = "none";
+
+}
 }
 
 function formatFileSize(bytes) {
-  if (!Number.isFinite(bytes)) {
-    return "";
-  }
+if (!Number.isFinite(bytes)) {
+return "";
+}
 
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
+if (bytes < 1024) {
+return ${bytes} B;
+}
 
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
+if (bytes < 1024 * 1024) {
+return ${(bytes / 1024).toFixed(1)} KB;
+}
 
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+return ${(bytes / (1024 * 1024)).toFixed(1)} MB;
 }
 
 function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+return String(value)
+.replace(/&/g, "&")
+.replace(/</g, "<")
+.replace(/>/g, ">")
+.replace(/"/g, """)
+.replace(/'/g, "'");
 }
 
 /* =========================
-   RESET ATTACHMENT
+RESET ATTACHMENT
 ========================= */
 
 function resetAttachment() {
-  selectedImage = null;
-  selectedFile = null;
+selectedImage = null;
+selectedFile = null;
 
-  if (fileUpload) {
-    fileUpload.value = "";
-  }
+if (fileUpload) {
+fileUpload.value = "";
+}
 
-  const previewWrap =
-    document.getElementById("previewWrap");
+const previewWrap =
+document.getElementById("previewWrap");
 
-  const preview =
-    document.getElementById("preview");
+const preview =
+document.getElementById("preview");
 
-  const info =
-    document.getElementById("filePreviewInfo");
+const info =
+document.getElementById("filePreviewInfo");
 
-  if (previewWrap) {
-    previewWrap.classList.add("hidden");
-  }
+if (previewWrap) {
+previewWrap.classList.add("hidden");
+}
 
-  if (preview) {
-    preview.removeAttribute("src");
-  }
+if (preview) {
+preview.removeAttribute("src");
+}
 
-  if (info) {
-    info.textContent = "";
-  }
+if (info) {
+info.textContent = "";
+}
 }
 
 if (removeFile) {
-  removeFile.addEventListener(
-    "click",
-    resetAttachment
-  );
+removeFile.addEventListener(
+"click",
+resetAttachment
+);
 }
 
 /* =========================
-   SEND MESSAGE
-   CLOUDflare Worker -> GEMINI
+SEND MESSAGE
+CLOUDflare Worker -> GEMINI
 ========================= */
 
 if (form) {
-  form.addEventListener(
-    "submit",
-    async (event) => {
-      event.preventDefault();
+form.addEventListener(
+"submit",
+async (event) => {
+event.preventDefault();
 
-      const text =
-        input?.value?.trim() || "";
+const text =  
+    input?.value?.trim() || "";  
 
-      if (
-        !text &&
-        !selectedImage &&
-        !selectedFile
-      ) {
-        return;
-      }
+  if (  
+    !text &&  
+    !selectedImage &&  
+    !selectedFile  
+  ) {  
+    return;  
+  }  
 
-      clearWelcome();
+  clearWelcome();  
 
-      const displayText =
-        text ||
-        (
-          selectedImage
-            ? "Please analyze this image."
-            : "Please read this file."
-        );
+  const displayText =  
+    text ||  
+    (  
+      selectedImage  
+        ? "Please analyze this image."  
+        : "Please read this file."  
+    );  
 
-      addMessage(
-        displayText,
-        "user"
-      );
+  addMessage(  
+    displayText,  
+    "user"  
+  );  
 
-      input.value = "";
+  input.value = "";  
 
-      const loading =
-        addMessage(
-          "Thinking...",
-          "assistant"
-        );
+  const loading =  
+    addMessage(  
+      "Thinking...",  
+      "assistant"  
+    );  
 
-      const sendBtn =
-        document.getElementById("send");
+  const sendBtn =  
+    document.getElementById("send");  
 
-      if (input) {
-        input.disabled = true;
-      }
+  if (input) {  
+    input.disabled = true;  
+  }  
 
-      if (micBtn) {
-        micBtn.disabled = true;
-      }
+  if (micBtn) {  
+    micBtn.disabled = true;  
+  }  
 
-      if (uploadBtn) {
-        uploadBtn.disabled = true;
-      }
+  if (uploadBtn) {  
+    uploadBtn.disabled = true;  
+  }  
 
-      if (sendBtn) {
-        sendBtn.disabled = true;
-      }
+  if (sendBtn) {  
+    sendBtn.disabled = true;  
+  }  
 
-      if (webSearchBtn) {
-        webSearchBtn.disabled = true;
-      }
+  if (webSearchBtn) {  
+    webSearchBtn.disabled = true;  
+  }  
 
-      try {
-        const currentMessage = {
-          role: "user",
-          content: displayText
-        };
+  try {  
+    const currentMessage = {  
+      role: "user",  
+      content: displayText  
+    };  
 
-        /*
-         * Keep image/file information in the
-         * frontend conversation state.
-         */
-        if (selectedImage) {
-          currentMessage.image =
-            selectedImage;
-        }
+    /*  
+     * Keep image/file information in the  
+     * frontend conversation state.  
+     */  
+    if (selectedImage) {  
+      currentMessage.image =  
+        selectedImage;  
+    }  
 
-        if (selectedFile) {
-          currentMessage.file =
-            selectedFile;
-        }
+    if (selectedFile) {  
+      currentMessage.file =  
+        selectedFile;  
+    }  
 
-        messages.push(
-          currentMessage
-        );
+    messages.push(  
+      currentMessage  
+    );  
 
-        /*
-         * IMPORTANT:
-         * Your Worker endpoint is /chat.
-         * Gemini API key stays inside the
-         * Cloudflare Worker secret.
-         */
-        const response =
-          await fetch(
-            "/chat",
-            {
-              method: "POST",
+    /*  
+     * IMPORTANT:  
+     * Your Worker endpoint is /chat.  
+     * Gemini API key stays inside the  
+     * Cloudflare Worker secret.  
+     */  
+    const response =  
+      await fetch(  
+        "/chat",  
+        {  
+          method: "POST",  
 
-              headers: {
-                "Content-Type":
-                  "application/json"
-              },
+          headers: {  
+            "Content-Type":  
+              "application/json"  
+          },  
 
-              body: JSON.stringify({
-                messages: messages,
-                webSearch:
-                  webSearchEnabled
-              })
-            }
-          );
+          body: JSON.stringify({  
+            messages: messages,  
+            webSearch:  
+              webSearchEnabled  
+          })  
+        }  
+      );  
 
-        const rawText =
-          await response.text();
+    const rawText =  
+      await response.text();  
 
-        let data = null;
+    let data = null;  
 
-        if (rawText.trim()) {
-          try {
-            data =
-              JSON.parse(
-                rawText
-              );
-          } catch (jsonError) {
-            console.error(
-              "Invalid JSON from Worker:",
-              rawText
-            );
+    if (rawText.trim()) {  
+      try {  
+        data =  
+          JSON.parse(  
+            rawText  
+          );  
+      } catch (jsonError) {  
+        console.error(  
+          "Invalid JSON from Worker:",  
+          rawText  
+        );  
 
-            throw new Error(
-              "Worker ne invalid response bheja."
-            );
-          }
-        }
+        throw new Error(  
+          "Worker ne invalid response bheja."  
+        );  
+      }  
+    }  
 
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              `Server error (${response.status})`
-          );
-        }
+    if (!response.ok) {  
+      throw new Error(  
+        data?.error ||  
+          `Server error (${response.status})`  
+      );  
+    }  
 
-        /*
-         * Your Worker currently returns:
-         *
-         * {
-         *   ok: true,
-         *   message: "Gemini reply"
-         * }
-         *
-         * So message is checked first.
-         */
-        const reply =
-          data?.message ||
-          data?.reply ||
-          data?.output_text ||
-          "";
+    /*  
+     * Your Worker currently returns:  
+     *  
+     * {  
+     *   ok: true,  
+     *   message: "Gemini reply"  
+     * }  
+     *  
+     * So message is checked first.  
+     */  
+    const reply =  
+      data?.message ||  
+      data?.reply ||  
+      data?.output_text ||  
+      "";  
 
-        if (
-          typeof reply !== "string" ||
-          !reply.trim()
-        ) {
-          throw new Error(
-            "Gemini se empty response mila."
-          );
-        }
+    if (  
+      typeof reply !== "string" ||  
+      !reply.trim()  
+    ) {  
+      throw new Error(  
+        "Gemini se empty response mila."  
+      );  
+    }  
 
-        loading.textContent =
-          reply;
+    loading.textContent =  
+      reply;  
 
-        messages.push({
-          role: "assistant",
-          content: reply
-        });
+    messages.push({  
+      role: "assistant",  
+      content: reply  
+    });  
 
-      } catch (error) {
-        console.error(
-          "RAO AI ERROR:",
-          error
-        );
+  } catch (error) {  
+    console.error(  
+      "RAO AI ERROR:",  
+      error  
+    );  
 
-        /*
-         * Remove the user message from
-         * conversation state if the request
-         * failed, so a retry does not create
-         * duplicate history.
-         */
-        if (
-          messages.length &&
-          messages[messages.length - 1]
-            ?.role === "user"
-        ) {
-          messages.pop();
-        }
+    /*  
+     * Remove the user message from  
+     * conversation state if the request  
+     * failed, so a retry does not create  
+     * duplicate history.  
+     */  
+    if (  
+      messages.length &&  
+      messages[messages.length - 1]  
+        ?.role === "user"  
+    ) {  
+      messages.pop();  
+    }  
 
-        loading.textContent =
-          "❌ Error: " +
-          (
-            error?.message ||
-            "RAO AI se response nahi mila."
-          );
+    loading.textContent =  
+      "❌ Error: " +  
+      (  
+        error?.message ||  
+        "RAO AI se response nahi mila."  
+      );  
 
-      } finally {
-        resetAttachment();
+  } finally {  
+    resetAttachment();  
 
-        if (input) {
-          input.disabled = false;
-        }
+    if (input) {  
+      input.disabled = false;  
+    }  
 
-        if (micBtn) {
-          micBtn.disabled = false;
-        }
+    if (micBtn) {  
+      micBtn.disabled = false;  
+    }  
 
-        if (uploadBtn) {
-          uploadBtn.disabled = false;
-        }
+    if (uploadBtn) {  
+      uploadBtn.disabled = false;  
+    }  
 
-        if (sendBtn) {
-          sendBtn.disabled = false;
-        }
+    if (sendBtn) {  
+      sendBtn.disabled = false;  
+    }  
 
-        if (webSearchBtn) {
-          webSearchBtn.disabled = false;
-        }
+    if (webSearchBtn) {  
+      webSearchBtn.disabled = false;  
+    }  
 
-        input?.focus();
-      }
-    }
-  );
+    input?.focus();  
+  }  
+}
+
+);
 }
 
 /* =========================
-   ENTER TO SEND
+ENTER TO SEND
 ========================= */
 
 if (input) {
-  input.addEventListener(
-    "keydown",
-    (event) => {
-      if (
-        event.key === "Enter" &&
-        !event.shiftKey
-      ) {
-        event.preventDefault();
+input.addEventListener(
+"keydown",
+(event) => {
+if (
+event.key === "Enter" &&
+!event.shiftKey
+) {
+event.preventDefault();
 
-        if (!input.disabled) {
-          form?.requestSubmit();
-        }
-      }
-    }
-  );
+if (!input.disabled) {  
+      form?.requestSubmit();  
+    }  
+  }  
+}
 
-  input.addEventListener(
-    "input",
-    () => {
-      input.style.height = "auto";
+);
 
-      input.style.height =
-        Math.min(
-          input.scrollHeight,
-          140
-        ) + "px";
-    }
-  );
+input.addEventListener(
+"input",
+() => {
+input.style.height = "auto";
+
+input.style.height =  
+    Math.min(  
+      input.scrollHeight,  
+      140  
+    ) + "px";  
+}
+
+);
 }
 
 /* =========================
-   NEW CHAT
+NEW CHAT
 ========================= */
 
 if (newChatBtn) {
-  newChatBtn.addEventListener(
-    "click",
-    () => {
-      if (
-        "speechSynthesis" in window
-      ) {
-        speechSynthesis.cancel();
-      }
+newChatBtn.addEventListener(
+"click",
+() => {
+if (
+"speechSynthesis" in window
+) {
+speechSynthesis.cancel();
+}
 
-      messages = [];
+messages = [];  
 
-      selectedImage = null;
-      selectedFile = null;
+  selectedImage = null;  
+  selectedFile = null;  
 
-      webSearchEnabled = false;
+  webSearchEnabled = false;  
 
-      if (fileUpload) {
-        fileUpload.value = "";
-      }
+  if (fileUpload) {  
+    fileUpload.value = "";  
+  }  
 
-      if (webSearchBtn) {
-        webSearchBtn.classList.remove(
-          "active"
-        );
+  if (webSearchBtn) {  
+    webSearchBtn.classList.remove(  
+      "active"  
+    );  
 
-        webSearchBtn.textContent =
-          "🌐 Web Search: OFF";
+    webSearchBtn.textContent =  
+      "🌐 Web Search: OFF";  
 
-        webSearchBtn.disabled = false;
-      }
+    webSearchBtn.disabled = false;  
+  }  
 
-      const note =
-        document.getElementById(
-          "webSearchNote"
-        );
+  const note =  
+    document.getElementById(  
+      "webSearchNote"  
+    );  
 
-      if (note) {
-        note.textContent =
-          "Current web information is off";
-      }
+  if (note) {  
+    note.textContent =  
+      "Current web information is off";  
+  }  
 
-      resetAttachment();
+  resetAttachment();  
 
-      if (chat) {
-        chat.innerHTML = `
-          <div class="welcome">
-            <div class="logo">✦</div>
+  if (chat) {  
+    chat.innerHTML = `  
+      <div class="welcome">  
+        <div class="logo">✦</div>  
 
-            <h1>Welcome to RAO AI</h1>
+        <h1>Welcome to RAO AI</h1>  
 
-            <p>
-              Ask anything, upload an image/PDF/file,
-              speak, or turn on Web Search for
-              current information.
-            </p>
-          </div>
-        `;
-      }
+        <p>  
+          Ask anything, upload an image/PDF/file,  
+          speak, or turn on Web Search for  
+          current information.  
+        </p>  
+      </div>  
+    `;  
+  }  
 
-      if (input) {
-        input.value = "";
-        input.style.height = "auto";
-        input.disabled = false;
-        input.focus();
-      }
-    }
-  );
+  if (input) {  
+    input.value = "";  
+    input.style.height = "auto";  
+    input.disabled = false;  
+    input.focus();  
+  }  
+}
+
+);
 }
 
 /* =========================
-   PAGE READY
+PAGE READY
 ========================= */
 
 window.addEventListener(
-  "load",
-  () => {
-    if (input) {
-      input.focus();
-    }
-  }
+"load",
+() => {
+if (input) {
+input.focus();
+}
+}
 );
